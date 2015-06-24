@@ -801,6 +801,11 @@ function Set-ADRelationParams {
 # HOOKS FUNCTIONS
 
 function Run-InstallHook {
+    # Disable firewall
+    Execute-ExternalCommand {
+        netsh.exe advfirewall set allprofiles state off
+    } -ErrorMessage "Failed to disable firewall."
+
     Configure-VMSwitch
 
     # Install Git

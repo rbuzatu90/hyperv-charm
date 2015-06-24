@@ -1,0 +1,117 @@
+options:
+  zuul-branch:
+    type: string
+    default: ""
+    description: "Zuul branch."
+  zuul-project:
+    type: string
+    default: ""
+    description: "Zuul project."
+  zuul-url:
+    type: string
+    default: ""
+    description: "Zuul URL."
+  zuul-ref:
+    type: string
+    default: ""
+    description: "Zuul ref."
+  zuul-change:
+    type: string
+    default: ""
+    description: "Zuul change."
+  ppy-mirror:
+    type: string
+    defualt: ""
+    description: "PPY mirror."
+  download-mirror:
+    type: string
+    default: "http://dl.openstack.tld/"
+    description: "Download mirror."
+  wheel-mirror:
+    type: string
+    default: "http://dl.openstack.tld/wheels"
+    description: "Python wheel packages mirror."
+  git-user-email:
+    type: string
+    default: "hyper-v_ci@microsoft.com"
+    description: "Value to pass to user.email git config."
+  git-user-name:
+    type: string
+    default: "Hyper-V CI"
+    description: "Value to pass to user.name git config."
+  vmswitch-name:
+    default: br100
+    type: string
+    description: Virtual switch to use
+  data-port:
+    type: string
+    default: ""
+    description: |
+      Ethernet interface to use for vmswitch. This can be a MAC address or an interface name.
+      This option is mandatory if more then one interface is present on the target system.
+      In cases where there is only one interface on the system, the vmswitch will be created using that
+      interface and OSManagement will be set to True, regardless of the vmswitch-management option.
+      Avoid using the management interface as a data interface where system has more then one NIC.
+  vmswitch-management:
+    default: False
+    type: boolean
+    description: |
+      Allow management OS on this vm switch. If True, the switch will be set in DHCP mode.
+  extra-python-packages:
+    default: ""
+    type: string
+    description: "Extra python packages to install."
+  ad-user-name:
+    default: ""
+    type: string
+    description: "User name of the AD user that will be used by this Hyper-V node."
+  git-url:
+    type: string
+    default: ""
+    description: |
+      URL used to download git for Windows. If provided, it overrides the
+      default value from code.
+  git-sha1:
+    type: string
+    default: ""
+    description: |
+      SHA1 checksum used to check the file integrity for the git installer.
+  python27-url:
+    type: string
+    default: ""
+    description: |
+      URL used to download Python 2.7.x for Windows. If provided, it
+      overrides the default value from code.
+  python27-sha1:
+    type: string
+    default: ""
+    description: |
+      SHA1 checksum used to check the file integrity for the Python installer.
+  7z-url:
+    type: string
+    default: ""
+    description: |
+      URL used to download 7z installer for Windows. If provided, it
+      overrides the default value from code.
+  7z-sha1:
+    type: string
+    default: ""
+    description: |
+      SHA1 checksum used to check the file integrity for the 7z installer.
+  enable-freerdp-console:
+    type: boolean
+    default: True
+    description: |
+      Utility to connect to the console of a VM.
+  vc-2012-url:
+    type: string
+    default: ""
+    description: |
+      URL used to download Visual C++ 2012 x86 runtime. If provided, it
+      overrides the default value from code. This is required in
+      case enable-freerdp-console is set to True.
+  vc-2012-sha1:
+    type: string
+    default: ""
+    description: |
+      SHA1 checksum used to check the file integrity of the vc-2012 installer.

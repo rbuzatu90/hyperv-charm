@@ -1,0 +1,11 @@
+name: hyper-v-ci
+summary: Hyper-V charm for CI
+maintainer: Ionut Balutoiu <ibalutoiu@cloudbasesolutions.com>
+description: Hyper-V charm for CI
+tags:
+  - windows
+requires:
+  ad-join:
+    interface: ad-join
+  devstack:
+    interface: devstack

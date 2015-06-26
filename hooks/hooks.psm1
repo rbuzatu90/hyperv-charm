@@ -807,6 +807,20 @@ function Set-CharmStatus {
     } -ErrorMessage "Failed to set charm status to '$Status'."
 }
 
+function Set-DevStackRelationParams {
+    Param(
+        [HashTable]$RelationParams
+    )
+
+    $rids = Get-JujuRelationIds -RelType "devstack"
+    foreach ($rid in $rids) {
+        $ret = Set-JujuRelation -Relation_Id $rid -Relation_Settings $RelationParams
+        if ($ret -eq $false) {
+           Write-JujuError "Failed to set DevStack relation parameters."
+        }
+    }
+}
+
 
 # HOOKS FUNCTIONS
 
@@ -936,6 +950,9 @@ function Run-RelationHooks {
         $adUser = $adUserCreds.PSObject.Properties.Name
         $adUserPassword = $adUserCreds.PSObject.Properties.Value
         $domainUser = $adCtx["ad_domain"] + "\" + $adUser
+
+        $relationParams = @{ 'ad_credentials' = $adCtx["ad_credentials"]; }
+        Set-DevStackRelationParams $relationParams
 
         # Add AD user to local Administrators group
         Add-UserToLocalAdminsGroup $adCtx["ad_domain"] $adUser

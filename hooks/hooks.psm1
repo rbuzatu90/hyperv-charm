@@ -989,9 +989,9 @@ function Run-RelationHooks {
         Start-Service -ServiceName $NEUTRON_SERVICE_NAME
         Write-JujuLog "Polling $NEUTRON_SERVICE_NAME service status for 60 seconds."
         Poll-ServiceStatus $NEUTRON_SERVICE_NAME -IntervalSeconds 60
-    }
 
-    Set-CharmStatus "active"
+        Set-CharmStatus "active"
+    }
 }
 
 

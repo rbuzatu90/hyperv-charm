@@ -951,7 +951,13 @@ function Run-RelationHooks {
         $adUserPassword = $adUserCreds.PSObject.Properties.Value
         $domainUser = $adCtx["ad_domain"] + "\" + $adUser
 
-        $relationParams = @{ 'ad_credentials' = $adCtx["ad_credentials"]; }
+        $adUserCred = @{
+            'domain'   = $adCtx["ad_domain"];
+            'username' = $adUser;
+            'password' = $adUserPassword
+        }
+        $encADUserCred = Marshall-Object $adUserCred
+        $relationParams = @{ 'ad_credentials' = $encADUserCred; }
         Set-DevStackRelationParams $relationParams
 
         # Add AD user to local Administrators group

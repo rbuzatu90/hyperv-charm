@@ -797,6 +797,30 @@ function Set-ADRelationParams {
 }
 
 
+function Set-CharmStatus {
+    Param(
+        [string]$Status
+    )
+
+    Execute-ExternalCommand {
+        status-set.exe $Status
+    } -ErrorMessage "Failed to set charm status to '$Status'."
+}
+
+function Set-DevStackRelationParams {
+    Param(
+        [HashTable]$RelationParams
+    )
+
+    $rids = Get-JujuRelationIds -RelType "devstack"
+    foreach ($rid in $rids) {
+        $ret = Set-JujuRelation -Relation_Id $rid -Relation_Settings $RelationParams
+        if ($ret -eq $false) {
+           Write-JujuError "Failed to set DevStack relation parameters."
+        }
+    }
+}
+
 
 # HOOKS FUNCTIONS
 
@@ -927,6 +951,15 @@ function Run-RelationHooks {
         $adUserPassword = $adUserCreds.PSObject.Properties.Value
         $domainUser = $adCtx["ad_domain"] + "\" + $adUser
 
+        $adUserCred = @{
+            'domain'   = $adCtx["ad_domain"];
+            'username' = $adUser;
+            'password' = $adUserPassword
+        }
+        $encADUserCred = Marshall-Object $adUserCred
+        $relationParams = @{ 'ad_credentials' = $encADUserCred; }
+        Set-DevStackRelationParams $relationParams
+
         # Add AD user to local Administrators group
         Add-UserToLocalAdminsGroup $adCtx["ad_domain"] $adUser
 
@@ -962,6 +995,8 @@ function Run-RelationHooks {
         Start-Service -ServiceName $NEUTRON_SERVICE_NAME
         Write-JujuLog "Polling $NEUTRON_SERVICE_NAME service status for 60 seconds."
         Poll-ServiceStatus $NEUTRON_SERVICE_NAME -IntervalSeconds 60
+
+        Set-CharmStatus "active"
     }
 }
 

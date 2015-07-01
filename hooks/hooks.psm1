@@ -871,7 +871,8 @@ function Run-InstallHook {
 
     # Install extra python packages
     Write-JujuLog "Installing pip dependencies..."
-    Execute-ExternalCommand -Command { easy_install -U pip } `
+    $getPip = Download-File -DownloadLink "https://bootstrap.pypa.io/get-pip.py"
+    Execute-ExternalCommand -Command { python $getPip } `
                             -ErrorMessage "Failed to install pip."
     $pythonPkgs = Get-JujuCharmConfig -scope 'extra-python-packages'
     if ($pythonPkgs) {

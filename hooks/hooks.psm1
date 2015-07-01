@@ -254,6 +254,10 @@ function Install-OpenStackProjectFromRepo {
     )
 
     pushd $ProjectPath
+    if((test-path "requirements.txt")){
+        Execute-ExternalCommand -Command { pip install -U -r requirements.txt } `
+                            -ErrorMessage "Failed to install requirements from $ProjectPath."
+    }
     Execute-ExternalCommand -Command { python setup.py install } `
                             -ErrorMessage "Failed to install $ProjectPath from repo."
     popd
@@ -874,6 +878,10 @@ function Run-InstallHook {
     $getPip = Download-File -DownloadLink "https://bootstrap.pypa.io/get-pip.py"
     Execute-ExternalCommand -Command { python $getPip } `
                             -ErrorMessage "Failed to install pip."
+
+    $version = & pip --version
+    Write-JujuLog "Pip version: $version"
+
     $pythonPkgs = Get-JujuCharmConfig -scope 'extra-python-packages'
     if ($pythonPkgs) {
         $pythonPkgsArr = $pythonPkgs.Split()

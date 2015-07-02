@@ -253,12 +253,12 @@ function Install-OpenStackProjectFromRepo {
         [string]$ProjectPath
     )
 
-    pushd $ProjectPath
-    if((test-path "requirements.txt")){
-        Execute-ExternalCommand -Command { pip install -U -r requirements.txt } `
-                            -ErrorMessage "Failed to install requirements from $ProjectPath."
-    }
-    Execute-ExternalCommand -Command { python setup.py install } `
+#    $requirements = Join-Path $ProjectPath "requirements.txt"
+#    if((test-path $requirements)){
+#        Execute-ExternalCommand -Command { pip install -r $requirements } `
+#                            -ErrorMessage "Failed to install requirements from $ProjectPath."
+#    }
+    Execute-ExternalCommand -Command { pip install -e $ProjectPath } `
                             -ErrorMessage "Failed to install $ProjectPath from repo."
     popd
 }
@@ -477,6 +477,9 @@ function Create-Environment {
     if (!(Test-Path $NOVA_SERVICE_EXECUTABLE)) {
         Throw "$NOVA_SERVICE_EXECUTABLE was not found."
     }
+
+    Execute-ExternalCommand -Command { pip install pbr==0.11 } `
+                                    -ErrorMessage "Failed to install pbr==0.11"
 
     Write-JujuLog "Copying default config files..."
     $defaultConfigFiles = @('rootwrap.d', 'api-paste.ini', 'cells.json',

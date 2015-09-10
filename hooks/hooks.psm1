@@ -996,6 +996,8 @@ function Run-RelationHooks {
         Write-JujuLog "Polling $NEUTRON_SERVICE_NAME service status for 60 seconds."
         Poll-ServiceStatus $NEUTRON_SERVICE_NAME -IntervalSeconds 60
 
+        Start-Service "MSiSCSI"
+
         Set-CharmStatus "active"
     }
 }

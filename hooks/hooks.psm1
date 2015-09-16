@@ -9,13 +9,9 @@ try {
 }
 
 $GIT_URL       = "https://github.com/msysgit/msysgit/releases/download/Git-1.9.5-preview20150319/Git-1.9.5-preview20150319.exe"
-$GIT_SHA1      = "A8658BAE0DE8C8D3E40AA97A236A4FCF81DE50DF"
 $PYTHON27_URL  = "https://www.python.org/ftp/python/2.7.10/python-2.7.10.msi"
-$PYTHON27_SHA1 = "9E62F37407E6964EE0374B32869B7B4AB050D12A"
 $7Z_URL        = "http://www.7-zip.org/a/7z938.exe"
-$7Z_SHA1       = "9AC9E5E6A19BF3B18CD7BCBE34A5141996BB3028"
 $VC_2012_URL   = "http://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x86.exe"
-$VC_2012_SHA1  = "96B377A27AC5445328CBAAE210FC4F0AAA750D3F"
 
 $NEUTRON_GIT           = "https://github.com/openstack/neutron.git"
 $NOVA_GIT              = "https://github.com/openstack/nova.git"
@@ -106,19 +102,20 @@ function Get-URLChecksum {
 }
 
 # Returns the full path of the package after it is downloaded using
-# the URL and SHA1 checksum received as parameters. The package is cached
-# on the disk until the installation successfully finishes. If the hook
-# fails, on the second run this function will return the cached package path.
+# the URL parameter (SHA1 checksum may optionally be specified). The
+# package is cached on the disk until the installation successfully finishes.
+# If the hook fails, on the second run this function will return the cached
+# package path if checksum is given and matches.
 function Get-PackagePath {
     Param(
         [string]$URL,
-        [string]$Sha1Checksum
+        [string]$Sha1Checksum=""
     )
 
     $packagePath = Join-Path $env:TEMP $URL.Split('/')[-1]
     if (Test-Path $packagePath) {
         $sha1Hash = (Get-FileHash -Path $packagePath -Algorithm "SHA1").Hash
-        if ($sha1Hash -eq $Sha1Checksum) {
+        if (!$SHA1Checksum -and ($sha1Hash -eq $Sha1Checksum)) {
             return $packagePath
         }
         Remove-Item -Recurse -Force -Path $packagePath
@@ -129,13 +126,14 @@ function Get-PackagePath {
 
 
 # Installs a package after it is downloaded from the Internet and checked for
-# integrity with SHA1 checksum. Accepts as parameters:  an URL, a SHA1
-# checksum and 'ArgumentList' which can be passed if the installer requires
-# unattended installation. Supported packages formats are: '.exe' and '.msi'.
+# integrity with SHA1 checksum. Accepts as parameters:  an URL, an optional
+# SHA1 checksum and 'ArgumentList' which can be passed if the installer
+# requires unattended installation. Supported packages formats are: '.exe' and
+# '.msi'.
 function Install-Package {
     Param(
         [string]$URL,
-        [string]$SHA1Checksum,
+        [string]$SHA1Checksum="",
         [array]$ArgumentList
     )
 
@@ -714,7 +712,7 @@ function Install-FreeRDPConsole {
 
     $urlChecksum = Get-URLChecksum 'vc-2012-url' 'vc-2012-sha1'
     if (!$urlChecksum) {
-        Install-Package $VC_2012_URL $VC_2012_SHA1 @('/q')
+        Install-Package -URL $VC_2012_URL -ArgumentList @('/q')
     } else {
         Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/q')
     }
@@ -835,7 +833,7 @@ function Run-InstallHook {
     # Install Git
     $urlChecksum = Get-URLChecksum 'git-url' 'git-sha1'
     if (!$urlChecksum) {
-        Install-Package $GIT_URL $GIT_SHA1 @('/SILENT')
+        Install-Package -URL $GIT_URL -ArgumentList @('/SILENT')
     } else {
         Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/SILENT')
     }
@@ -845,7 +843,7 @@ function Run-InstallHook {
     # Install 7z
     $urlChecksum = Get-URLChecksum '7z-url' '7z-sha1'
     if (!$urlChecksum) {
-        Install-Package $7Z_URL $7Z_SHA1 @('/S')
+        Install-Package -URL $7Z_URL -ArgumentList @('/S')
     } else {
         Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/S')
     }
@@ -855,7 +853,7 @@ function Run-InstallHook {
     # Install Python 2.7.x (x86)
     $urlChecksum = Get-URLChecksum 'python27-url' 'python27-sha1'
     if (!$urlChecksum) {
-        Install-Package $PYTHON27_URL $PYTHON27_SHA1 @('/qn')
+        Install-Package -URL $PYTHON27_URL -ArgumentList @('/qn')
     } else {
         Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/qn')
     }

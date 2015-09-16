@@ -26,6 +26,7 @@ $BIN_DIR       = Join-Path $OPENSTACK_DIR "bin"
 $CONFIG_DIR    = Join-Path $OPENSTACK_DIR "etc"
 $LOG_DIR       = Join-Path $OPENSTACK_DIR "log"
 $SERVICE_DIR   = Join-Path $OPENSTACK_DIR "service"
+$FILES_DIR     = Join-Path ${env:CHARM_DIR} "files"
 
 $NOVA_SERVICE_NAME        = "nova-compute"
 $NOVA_SERVICE_DESCRIPTION = "OpenStack nova Compute Service"
@@ -374,13 +375,10 @@ function Create-Environment {
 
     $mkisofsPath = Join-Path $BIN_DIR "mkisofs.exe"
     $qemuimgPath = Join-Path $BIN_DIR "qemu-img.exe"
-    $downloadMirror = Get-JujuCharmConfig -scope "download-mirror"
     if (!(Test-Path $mkisofsPath) -or !(Test-Path $qemuimgPath)) {
         Write-JujuLog "Downloading OpenStack binaries..."
-        $zipPath = "$BIN_DIR\openstack_bin.zip"
-        Invoke-WebRequest -Uri "$downloadMirror/openstack_bin.zip" -OutFile $zipPath
+        $zipPath = Join-Path $FILES_DIR "openstack_bin.zip"
         Unzip-With7z $zipPath $BIN_DIR
-        rm $zipPath
     }
 
     Write-JujuLog "Cloning the required Git repositories..."
@@ -533,9 +531,7 @@ function Create-OpenStackService {
 
     $serviceFileName = "OpenStackService.exe"
     if(!(Test-Path "$SERVICE_DIR\$serviceFileName")) {
-        $downloadMirror = Get-JujuCharmConfig -scope "download-mirror"
-        Invoke-WebRequest -Uri "$downloadMirror/$serviceFileName" `
-                          -OutFile "$SERVICE_DIR\$serviceFileName"
+        Copy-Item "$FILES_DIR\$serviceFileName" "$SERVICE_DIR\$serviceFileName"
     }
 
     New-Service -Name "$ServiceName" `
@@ -717,8 +713,8 @@ function Install-FreeRDPConsole {
         Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/q')
     }
 
+    $freeRDPZip = Join-Path $FILES_DIR "FreeRDP_powershell.zip"
     $charmLibDir = Join-Path (Get-JujuCharmDir) "lib"
-    $freeRDPZip = Join-Path $charmLibDir "FreeRDP_powershell.zip"
     Unzip-With7z $freeRDPZip $charmLibDir
 
     # Copy wfreerdp.exe and DLL file to Windows folder
@@ -882,12 +878,8 @@ function Run-InstallHook {
 
     # Install posix_ipc
     Write-JujuLog "Installing posix_ipc library..."
-    $zipPath = Join-Path $LIB_DIR "posix_ipc.zip"
-    $downloadMirror = Get-JujuCharmConfig -scope "download-mirror"
-    Download-File -DownloadLink "$downloadMirror/posix_ipc.zip" `
-                  -DestinationFile $zipPath
+    $zipPath = Join-Path $FILES_DIR "posix_ipc.zip"
     Unzip-With7z $zipPath $LIB_DIR
-    rm $zipPath
 
     # Generate pip.ini config file
     Generate-PipConfigFile

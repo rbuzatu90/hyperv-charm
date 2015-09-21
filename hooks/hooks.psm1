@@ -8,11 +8,6 @@ try {
     exit 1
 }
 
-$GIT_URL       = "https://github.com/msysgit/msysgit/releases/download/Git-1.9.5-preview20150319/Git-1.9.5-preview20150319.exe"
-$PYTHON27_URL  = "https://www.python.org/ftp/python/2.7.10/python-2.7.10.msi"
-$7Z_URL        = "http://www.7-zip.org/a/7z938.exe"
-$VC_2012_URL   = "http://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x86.exe"
-
 $NEUTRON_GIT           = "https://github.com/openstack/neutron.git"
 $NOVA_GIT              = "https://github.com/openstack/nova.git"
 $NETWORKING_HYPERV_GIT = "https://github.com/stackforge/networking-hyperv.git"
@@ -39,6 +34,9 @@ $NEUTRON_SERVICE_EXECUTABLE  = Join-Path $PYTHON_DIR "Scripts\neutron-hyperv-age
 $NEUTRON_SERVICE_CONFIG      = Join-Path $CONFIG_DIR "neutron_hyperv_agent.conf"
 
 $PYTHON_PROCESS_NAME = "python"
+
+$VALID_HASHING_ALGORITHMS = @('SHA1', 'SHA256', 'SHA384', 'SHA512',
+                              'MACTripleDES', 'MD5', 'RIPEMD160')
 
 
 function Get-TemplatesDir {
@@ -81,60 +79,101 @@ function Get-DevStackContext {
 }
 
 
-# Returns an HashTable with the download URL and SHA1 checksum for a specific
-# package. First, it is checked if the user provided his own download link
-# and SHA1 checksum in config.yaml. If those options are not present,
-# $null is returned.
+# Returns an HashTable with the download URL, the checksum (with the hashing
+# algorithm) for a specific package. The URL config option for that package
+# is parsed. In case the checksum is not specified, 'CHECKSUM' and
+# 'HASHING_ALGORITHM' fields will be $null.
 function Get-URLChecksum {
     Param(
-        [string]$URLConfigKey,
-        [string]$SHA1ConfigKey
+        [string]$URLConfigKey
     )
 
     $url = Get-JujuCharmConfig -scope $URLConfigKey
-    if ($url) {
-        $sha1Checksum = Get-JujuCharmConfig -scope $SHA1ConfigKey
-        if ($sha1Checksum) {
-            return @{ 'URL' = $url; 
-                      'SHA1_CHECKSUM' = $sha1Checksum }
+    if ($url.contains('#')) {
+        $urlSplit = $url.split('#')
+        $algorithm = $urlSplit[1]
+        if (!$algorithm.contains('=')) {
+            Throw ("Invalid algorithm format! " +
+                   "Use the format: <hashing_algorithm>=<checksum>")
         }
+
+        $algorithmSplit = $algorithm.split('=')
+        $hashingAlgorithm = $algorithmSplit[0]
+        if ($hashingAlgorithm -notin $VALID_HASHING_ALGORITHMS) {
+            Throw ("Invalid hashing algorithm format! " +
+                   "Valid formats are: " + $VALID_HASHING_ALGORITHMS)
+        }
+
+        $checksum = $algorithmSplit[1]
+        return @{ 'URL' = $urlSplit[0];
+                  'CHECKSUM' = $checksum;
+                  'HASHING_ALGORITHM' = $hashingAlgorithm }
     }
-    return $null
+
+    return @{ 'URL' = $url;
+              'CHECKSUM' = $null;
+              'HASHING_ALGORITHM' = $null }
 }
 
+
+function Check-FileIntegrity {
+    Param(
+        [string]$FilePath,
+        [ValidateScript({$_ -in $VALID_HASHING_ALGORITHMS})]
+        [string]$Algorithm,
+        [string]$Checksum
+    )
+
+    $hash = (Get-FileHash -Path $FilePath -Algorithm $Algorithm).Hash
+    if ($hash -eq $Checksum) {
+        return $true
+    }
+    return $false
+}
+
+
 # Returns the full path of the package after it is downloaded using
-# the URL parameter (SHA1 checksum may optionally be specified). The
+# the URL parameter (a checksum may optionally be specified). The
 # package is cached on the disk until the installation successfully finishes.
 # If the hook fails, on the second run this function will return the cached
-# package path if checksum is given and matches.
+# package path if checksum is given and it matches.
 function Get-PackagePath {
     Param(
         [string]$URL,
-        [string]$Sha1Checksum=""
+        [string]$Checksum="",
+        [string]$HashingAlgorithm=""
     )
 
     $packagePath = Join-Path $env:TEMP $URL.Split('/')[-1]
     if (Test-Path $packagePath) {
-        $sha1Hash = (Get-FileHash -Path $packagePath -Algorithm "SHA1").Hash
-        if (!$SHA1Checksum -and ($sha1Hash -eq $Sha1Checksum)) {
-            return $packagePath
+        if ($Checksum -and $HashingAlgorithm) {
+            if (Check-FileIntegrity $packagePath $HashingAlgorithm $Checksum) {
+                return $packagePath
+            }
         }
         Remove-Item -Recurse -Force -Path $packagePath
     }
-    return (Download-File -DownloadLink $URL -ExpectedSHA1Hash $Sha1Checksum `
-                          -DestinationFile $packagePath)
+
+    $packagePath = Download-File -DownloadLink $URL -DestinationFile $packagePath
+    if ($Checksum -and $HashingAlgorithm) {
+        if (!(Check-FileIntegrity $packagePath $HashingAlgorithm $Checksum)) {
+            Throw "Wrong $HashingAlgorithm checksum for $URL"
+        }
+    }
+    return $packagePath
 }
 
 
 # Installs a package after it is downloaded from the Internet and checked for
-# integrity with SHA1 checksum. Accepts as parameters:  an URL, an optional
-# SHA1 checksum and 'ArgumentList' which can be passed if the installer
-# requires unattended installation. Supported packages formats are: '.exe' and
-# '.msi'.
+# integrity with SHA1 checksum. Accepts as parameters: an URL, an optional
+# 'Checksum' with its 'HashingAlgorithm' and 'ArgumentList' which can be passed
+# if the installer requires unattended installation.
+# Supported packages formats are: '.exe' and '.msi'
 function Install-Package {
     Param(
         [string]$URL,
-        [string]$SHA1Checksum="",
+        [string]$Checksum="",
+        [string]$HashingAlgorithm="",
         [array]$ArgumentList
     )
 
@@ -147,7 +186,7 @@ function Install-Package {
                "Unsupported installer format.")
     }
 
-    $installerPath = Get-PackagePath $URL $SHA1Checksum
+    $installerPath = Get-PackagePath $URL $Checksum $HashingAlgorithm
     $stat = Start-Process -FilePath $installerPath -ArgumentList $ArgumentList `
                           -PassThru -Wait
     if ($stat.ExitCode -ne 0) {
@@ -663,36 +702,6 @@ function Configure-VMSwitch {
 }
 
 
-function Add-UserToLocalAdminsGroup {
-    Param(
-        [string]$FQDN,
-        [string]$Username
-    )
-
-    $ret = Execute-ExternalCommand {
-        net.exe localgroup Administrators
-    } -ErrorMessage "Failed to get local Administrators."
-    $localAdmins = $ret[6..($ret.Length-3)]
-
-    $isLocalAdmin = $false
-    foreach ($localAdmin in $localAdmins) {
-        $split = $localAdmin.Split("\")
-        $domainName = $split[0]
-        $user = $split[1]
-        if (($FQDN -match $domainName) -and ($user -eq $UserName)) {
-            $isLocalAdmin = $true
-            break
-        }
-    }
-
-    if (!$isLocalAdmin) {
-        Execute-ExternalCommand {
-            net.exe localgroup Administrators "$FQDN\$UserName" '/ADD'
-        } -ErrorMessage "Failed to add user to local Administrators group."
-    }
-}
-
-
 function Get-HostFromURL {
     Param(
         [string]$URL
@@ -703,15 +712,28 @@ function Get-HostFromURL {
 }
 
 
+function Install-Dependency {
+    Param(
+        [string]$URLConfigKey,
+        [array]$ArgumentList
+    )
+
+    $urlChecksum = Get-URLChecksum $URLConfigKey
+    if ($urlChecksum['CHECKSUM'] -and $urlChecksum['HASHING_ALGORITHM']) {
+        Install-Package -URL $urlChecksum['URL'] `
+                        -Checksum $urlChecksum['CHECKSUM'] `
+                        -HashingAlgorithm $urlChecksum['HASHING_ALGORITHM'] `
+                        -ArgumentList $ArgumentList
+    } else {
+        Install-Package -URL $urlChecksum['URL'] -ArgumentList $ArgumentList
+    }
+}
+
+
 function Install-FreeRDPConsole {
     Write-JujuLog "Installing FreeRDP..."
 
-    $urlChecksum = Get-URLChecksum 'vc-2012-url' 'vc-2012-sha1'
-    if (!$urlChecksum) {
-        Install-Package -URL $VC_2012_URL -ArgumentList @('/q')
-    } else {
-        Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/q')
-    }
+    Install-Dependency 'vc-2012-url' @('/q')
 
     $freeRDPZip = Join-Path $FILES_DIR "FreeRDP_powershell.zip"
     $charmLibDir = Join-Path (Get-JujuCharmDir) "lib"
@@ -729,7 +751,6 @@ function Install-FreeRDPConsole {
         mkdir $freeRDPModuleFolder
     }
     Copy-Item "$charmLibDir\FreeRDP\FreeRDP.psm1" $freeRDPModuleFolder
-
     Remove-Item -Recurse "$charmLibDir\FreeRDP"
 
     Write-JujuLog "Finished installing FreeRDP."
@@ -801,6 +822,7 @@ function Set-CharmStatus {
     } -ErrorMessage "Failed to set charm status to '$Status'."
 }
 
+
 function Set-DevStackRelationParams {
     Param(
         [HashTable]$RelationParams
@@ -827,32 +849,17 @@ function Run-InstallHook {
     Configure-VMSwitch
 
     # Install Git
-    $urlChecksum = Get-URLChecksum 'git-url' 'git-sha1'
-    if (!$urlChecksum) {
-        Install-Package -URL $GIT_URL -ArgumentList @('/SILENT')
-    } else {
-        Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/SILENT')
-    }
+    Install-Dependency 'git-url' @('/SILENT')
     AddTo-UserPath "${env:ProgramFiles(x86)}\Git\cmd"
     Renew-PSSessionPath
 
     # Install 7z
-    $urlChecksum = Get-URLChecksum '7z-url' '7z-sha1'
-    if (!$urlChecksum) {
-        Install-Package -URL $7Z_URL -ArgumentList @('/S')
-    } else {
-        Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/S')
-    }
+    Install-Dependency '7z-url' @('/S')
     AddTo-UserPath "${env:ProgramFiles(x86)}\7-Zip"
     Renew-PSSessionPath
 
     # Install Python 2.7.x (x86)
-    $urlChecksum = Get-URLChecksum 'python27-url' 'python27-sha1'
-    if (!$urlChecksum) {
-        Install-Package -URL $PYTHON27_URL -ArgumentList @('/qn')
-    } else {
-        Install-Package $urlChecksum['URL'] $urlChecksum['SHA1_CHECKSUM'] @('/qn')
-    }
+    Install-Dependency 'python27-url' @('/qn')
     AddTo-UserPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
     Renew-PSSessionPath
 

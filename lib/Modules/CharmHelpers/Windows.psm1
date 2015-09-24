@@ -423,4 +423,53 @@ function ConnectTo-ADController {
     Write-JujuLog "Finished joining active directory domain."
 }
 
+function Check-Membership {
+    Param (
+        [Parameter(Mandatory=$true)]
+        [string]$User,
+        [Parameter(Mandatory=$true)]
+        [string]$GroupSID
+    )
+
+    $group = Get-CimInstance -ClassName Win32_Group  `
+                -Filter "SID = '$GroupSID'"
+    $ret = Get-CimAssociatedInstance -InputObject $group `
+          -ResultClassName Win32_UserAccount | Where-Object `
+                                               { $_.Name -eq $User }
+    return $ret
+}
+
+function Convert-SIDToFriendlyName {
+    Param(
+        [Parameter(Mandatory=$true)]
+        [string]$SID
+    )
+
+    $objSID = New-Object System.Security.Principal.SecurityIdentifier($SID)
+    $objUser = $objSID.Translate( [System.Security.Principal.NTAccount])
+    $name = $objUser.Value
+    $n = $name.Split("\")
+    if ($n.length -gt 1){
+        return $n[1]
+    }
+    return $n[0]
+}
+
+function Add-UserToLocalAdminsGroup {
+    Param(
+        [string]$FQDN,
+        [string]$Username
+    )
+
+    $administratorsGroupSID = "S-1-5-32-544"
+    $isLocalAdmin = Check-Membership "$FQDN\$UserName" $administratorsGroupSID
+
+    if (!$isLocalAdmin) {
+        $groupName = Convert-SIDToFriendlyName -SID $administratorsGroupSID
+        Execute-ExternalCommand {
+            net.exe localgroup $groupName "$FQDN\$UserName" '/ADD'
+        } -ErrorMessage "Failed to add user to local Administrators group."
+    }
+}
+
 Export-ModuleMember -Function *

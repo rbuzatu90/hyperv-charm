@@ -67,37 +67,28 @@ options:
     description: "User name of the AD user that will be used by this Hyper-V node."
   git-url:
     type: string
-    default: ""
+    default: "https://github.com/msysgit/msysgit/releases/download/Git-1.9.5-preview20150319/Git-1.9.5-preview20150319.exe"
     description: |
-      URL used to download git for Windows. If provided, it overrides the
-      default value from code.
-  git-sha1:
-    type: string
-    default: ""
-    description: |
-      SHA1 checksum used to check the file integrity for the git installer.
+      URL used to download git for Windows. Optionally, a checksum supported
+      by the 'Get-FileHash' PowerShell cmdlet can be provided to check file
+      integrity.
+      Syntax is: "<url>#<hash_algorithm><checksum>"
   python27-url:
     type: string
-    default: ""
+    default: "https://www.python.org/ftp/python/2.7.10/python-2.7.10.msi"
     description: |
-      URL used to download Python 2.7.x for Windows. If provided, it
-      overrides the default value from code.
-  python27-sha1:
-    type: string
-    default: ""
-    description: |
-      SHA1 checksum used to check the file integrity for the Python installer.
+      URL used to download Python 2.7.x for Windows. Optionally, a checksum
+      supported by the 'Get-FileHash' PowerShell cmdlet can be provided to
+      check file integrity.
+      Syntax is: "<url>#<hash_algorithm><checksum>"
   7z-url:
     type: string
-    default: ""
+    default: "http://www.7-zip.org/a/7z938.exe"
     description: |
-      URL used to download 7z installer for Windows. If provided, it
-      overrides the default value from code.
-  7z-sha1:
-    type: string
-    default: ""
-    description: |
-      SHA1 checksum used to check the file integrity for the 7z installer.
+      URL used to download 7z installer for Windows. Optionally, a checksum
+      supported by the 'Get-FileHash' PowerShell cmdlet can be provided to
+      check file integrity.
+      Syntax is: "<url>#<hash_algorithm><checksum>"
   enable-freerdp-console:
     type: boolean
     default: True
@@ -105,13 +96,10 @@ options:
       Utility to connect to the console of a VM.
   vc-2012-url:
     type: string
-    default: ""
+    default: "http://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x86.exe"
     description: |
-      URL used to download Visual C++ 2012 x86 runtime. If provided, it
-      overrides the default value from code. This is required in
-      case enable-freerdp-console is set to True.
-  vc-2012-sha1:
-    type: string
-    default: ""
-    description: |
-      SHA1 checksum used to check the file integrity of the vc-2012 installer.
+      This is required only when config option 'enable-freerdp-console' is set to True.
+      URL used to download Visual C++ 2012 x86 runtime. Optionally, a checksum
+      supported by the 'Get-FileHash' PowerShell cmdlet can be provided to
+      check file integrity.
+      Syntax is: "<url>#<hash_algorithm><checksum>".

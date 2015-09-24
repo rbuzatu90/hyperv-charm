@@ -765,14 +765,12 @@ function Install-FreeRDPConsole {
 
 
 function Generate-PipConfigFile {
-    $wheelMirror = Get-JujuCharmConfig -scope 'wheel-mirror'
-    $ppyMirror = Get-JujuCharmConfig -scope 'ppy-mirror'
-    if (!$wheelMirror -and !$ppyMirror) {
+    $pypiMirror = Get-JujuCharmConfig -scope 'ppy-mirror'
+    if ($pypiMirror -eq $null -or $pypiMirror.Length -eq 0) {
         Write-JujuLog ("wheel-mirror option and ppy-mirror are not present. " +
                        "Will not generate the pip.ini file.")
         return
     }
-
     $pipDir = Join-Path $env:APPDATA "pip"
     if (!(Test-Path $pipDir)){
         mkdir $pipDir
@@ -782,15 +780,21 @@ function Generate-PipConfigFile {
     $pipIni = Join-Path $pipDir "pip.ini"
     New-Item -ItemType File $pipIni
 
-    if ($ppyMirror) {
-        Set-IniFileValue "index-url" "global" $ppyMirror $pipIni
+    $mirrors = $pypiMirror.Split()
+    $hosts = @()
+    foreach ($i in $mirrors){
+        $h = Get-HostFromURL $i
+        if ($h -in $hosts) {
+            continue
+        }
+        $hosts += $h
     }
 
-    if ($wheelMirror) {
-        $wheelHost = Get-HostFromURL $wheelMirror
-        Set-IniFileValue "trusted-host" "install" $wheelHost $pipIni
-        Set-IniFileValue "find-links" "install" $wheelMirror $pipIni
+    Set-IniFileValue "index-url" "global" $mirrors[0] $pipIni
+    if ($mirrors.Length -gt 1){
+        Set-IniFileValue "extra-index-url" "global" ($mirrors[1..$mirrors.Length] -Join " ") $pipIni
     }
+    Set-IniFileValue "trusted-host" "install" ($h -Join " ") $pipIni
 }
 
 
@@ -854,6 +858,7 @@ function Run-InstallHook {
     } -ErrorMessage "Failed to disable firewall."
 
     Configure-VMSwitch
+    Generate-PipConfigFile
 
     # Install Git
     Install-Dependency 'git-url' @('/SILENT')
@@ -899,9 +904,6 @@ function Run-InstallHook {
     Write-JujuLog "Installing posix_ipc library..."
     $zipPath = Join-Path $FILES_DIR "posix_ipc.zip"
     Unzip-With7z $zipPath $LIB_DIR
-
-    # Generate pip.ini config file
-    Generate-PipConfigFile
 
     Write-JujuLog "Installing pywin32..."
     Execute-ExternalCommand -Command { pip install pywin32 } `

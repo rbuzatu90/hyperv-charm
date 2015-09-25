@@ -431,12 +431,12 @@ function Check-Membership {
         [string]$GroupSID
     )
 
-    $group = Get-CimInstance -ClassName Win32_Group  `
-                -Filter "SID = '$GroupSID'"
-    $ret = Get-CimAssociatedInstance -InputObject $group `
-          -ResultClassName Win32_UserAccount | Where-Object `
-                                               { $_.Name -eq $User }
-    return $ret
+    $friendlyGroupName = Convert-SIDToFriendlyName $GroupSID
+    $group = [ADSI]"WinNT://${env:COMPUTERNAME}/$friendlyGroupName"
+    $localAdministrators = @($group.Invoke("Members")) | foreach `
+        { $_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null) }
+
+    return ($localAdministrators | Where-Object { $_ -eq $User })
 }
 
 function Convert-SIDToFriendlyName {
@@ -462,7 +462,7 @@ function Add-UserToLocalAdminsGroup {
     )
 
     $administratorsGroupSID = "S-1-5-32-544"
-    $isLocalAdmin = Check-Membership "$FQDN\$UserName" $administratorsGroupSID
+    $isLocalAdmin = Check-Membership $UserName $administratorsGroupSID
 
     if (!$isLocalAdmin) {
         $groupName = Convert-SIDToFriendlyName -SID $administratorsGroupSID

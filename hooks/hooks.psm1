@@ -794,7 +794,7 @@ function Generate-PipConfigFile {
     if ($mirrors.Length -gt 1){
         Set-IniFileValue "extra-index-url" "global" ($mirrors[1..$mirrors.Length] -Join " ") $pipIni
     }
-    Set-IniFileValue "trusted-host" "install" ($h -Join " ") $pipIni
+    Set-IniFileValue "trusted-host" "install" ($hosts -Join " ") $pipIni
 }
 
 

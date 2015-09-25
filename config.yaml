@@ -21,8 +21,12 @@ options:
     description: "Zuul change."
   pypi-mirror:
     type: string
-    defualt: ""
+    default: ""
     description: "Python Package Index mirror."
+  ppy-mirror:
+    type: string
+    default: ""
+    description: "(DEPRECATED config option) Python Package Index mirror."
   download-mirror:
     type: string
     default: "http://dl.openstack.tld/"

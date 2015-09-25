@@ -766,6 +766,9 @@ function Install-FreeRDPConsole {
 
 function Generate-PipConfigFile {
     $pypiMirror = Get-JujuCharmConfig -scope 'pypi-mirror'
+    if (!$pypiMirror) {
+        $pypiMirror = Get-JujuCharmConfig -scope 'ppy-mirror'
+    }
     if ($pypiMirror -eq $null -or $pypiMirror.Length -eq 0) {
         Write-JujuLog ("pypi-mirror config is not present. " +
                        "Will not generate the pip.ini file.")

@@ -430,7 +430,6 @@ function Check-Membership {
         [Parameter(Mandatory=$true)]
         [string]$GroupSID
     )
-
     $group = Get-CimInstance -ClassName Win32_Group  `
                 -Filter "SID = '$GroupSID'"
     $ret = Get-CimAssociatedInstance -InputObject $group `
@@ -462,7 +461,7 @@ function Add-UserToLocalAdminsGroup {
     )
 
     $administratorsGroupSID = "S-1-5-32-544"
-    $isLocalAdmin = Check-Membership "$FQDN\$UserName" $administratorsGroupSID
+    $isLocalAdmin = Check-Membership $UserName $administratorsGroupSID
 
     if (!$isLocalAdmin) {
         $groupName = Convert-SIDToFriendlyName -SID $administratorsGroupSID

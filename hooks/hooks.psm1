@@ -478,9 +478,6 @@ function Create-Environment {
         Throw "$NOVA_SERVICE_EXECUTABLE was not found."
     }
 
-    Execute-ExternalCommand -Command { pip install pbr==0.11 } `
-                                    -ErrorMessage "Failed to install pbr==0.11"
-
     Write-JujuLog "Copying default config files..."
     $defaultConfigFiles = @('rootwrap.d', 'api-paste.ini', 'cells.json',
                             'policy.json','rootwrap.conf')

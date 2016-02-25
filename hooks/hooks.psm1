@@ -1129,7 +1129,10 @@ function Run-InstallHook {
 
     Write-JujuLog "Installing posix_ipc library"
     $zipPath = Join-Path $FILES_DIR "posix_ipc.zip"
-    Expand-ZipArchive $zipPath $LIB_DIR
+    $posixIpcEgg = Join-Path $LIB_DIR "posix_ipc-0.9.8-py2.7.egg-info"
+    if (!(Test-Path $posixIpcEgg)) {
+        Expand-ZipArchive $zipPath $LIB_DIR
+    }
 
     Write-JujuLog "Installing pywin32"
     Start-ExternalCommand -ScriptBlock { pip install pywin32 } `

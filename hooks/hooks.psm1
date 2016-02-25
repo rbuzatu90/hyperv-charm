@@ -558,7 +558,7 @@ function Install-OVS {
         $InstallerPath = Get-OVSInstaller
     }
     Write-JujuInfo "Installing from $InstallerPath"
-    $ret = Start-Process -FilePath msiexec.exe -ArgumentList "INSTALLDIR=`"$ovsInstallDir`"","/qb","/l*v","$env:APPDATA\ovs-log.txt","/i","$InstallerPath" -Wait -PassThru
+    $ret = Start-Process -FilePath msiexec.exe -ArgumentList "INSTALLDIR=`"$OVS_DIR`"","/qb","/l*v","$env:APPDATA\ovs-log.txt","/i","$InstallerPath" -Wait -PassThru
     if($ret.ExitCode) {
         Throw "Failed to install OVS: $LASTEXITCODE"
     }
@@ -595,7 +595,7 @@ function Enable-OVSExtension {
        Throw "Cannot enable OVS extension. Not installed"
     }
     if (!$ext.Enabled) {
-        Enable-VMSwitchExtension $ovsExtName $ext.SwitchName
+        Enable-VMSwitchExtension $OVS_EXT_NAME $ext.SwitchName
     }
     return $true
 }
@@ -604,7 +604,7 @@ function Enable-OVSExtension {
 function Get-OVSExtStatus {
     $br = Get-JujuVMSwitchName
     Write-JujuInfo "Switch name is $br"
-    $ext = Get-VMSwitchExtension -VMSwitchName $br -Name $ovsExtName
+    $ext = Get-VMSwitchExtension -VMSwitchName $br -Name $OVS_EXT_NAME
 
     if (!$ext){
         Write-JujuInfo "Open vSwitch extension not installed"

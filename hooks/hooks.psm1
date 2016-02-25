@@ -1077,6 +1077,16 @@ function Set-DevStackRelationParams {
 }
 
 
+function Import-CloudbaseCert {
+    $crt = Join-Path $FILES_DIR "Cloudbase_signing.cer"
+    if (!(Test-Path $crt)){
+        return $false
+    }
+    Import-Certificate $crt -StoreLocation LocalMachine -StoreName TrustedPublisher
+}
+
+
+
 # HOOKS FUNCTIONS
 
 function Run-InstallHook {
@@ -1092,6 +1102,7 @@ function Run-InstallHook {
     # Disable firewall
     Start-ExternalCommand { netsh.exe advfirewall set allprofiles state off } -ErrorMessage "Failed to disable firewall."
 
+    Import-CloudbaseCert
     Start-ConfigureVMSwitch
     Write-PipConfigFile
 

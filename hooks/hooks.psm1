@@ -262,7 +262,7 @@ function Get-PackagePath {
     $packagePath = Join-Path $env:TEMP $URL.Split('/')[-1]
     if (Test-Path $packagePath) {
         if ($Checksum -and $HashingAlgorithm) {
-            if (Test-FileIntegrity $packagePath $Checksum $HashingAlgorithm) {
+            if (Test-FileIntegrity -File $packagePath -Algorithm $HashingAlgorithm -ExpectedHash $Checksum) {
                 return $packagePath
             }
         }
@@ -569,7 +569,7 @@ function Install-OVS {
 
 function Get-OVSInstaller {
     $urlChecksum = Get-URLChecksum "ovs-installer-url"
-    $location = Get-PackagePath $urlChecksum['URL'] $urlChecksum['checksum'] `
+    $location = Get-PackagePath $urlChecksum['URL'] $urlChecksum['CHECKSUM'] `
                                 $urlChecksum['HASHING_ALGORITHM']
     return $location
 }

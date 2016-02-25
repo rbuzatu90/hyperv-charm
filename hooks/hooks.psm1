@@ -615,6 +615,16 @@ function Get-OVSExtStatus {
 }
 
 
+function Enable-Service {
+    Param(
+        [Parameter(Mandatory=$true)]
+        [string]$ServiceName
+    )
+
+    Get-Service $ServiceName | Set-Service -StartupType Automatic
+}
+
+
 function Enable-OVS {
     Enable-OVSExtension
 

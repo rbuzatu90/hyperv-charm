@@ -23,18 +23,6 @@ options:
     type: string
     default: ""
     description: "Python Package Index mirror."
-  ppy-mirror:
-    type: string
-    default: ""
-    description: "(DEPRECATED config option) Python Package Index mirror."
-  download-mirror:
-    type: string
-    default: "http://dl.openstack.tld/"
-    description: "Download mirror."
-  wheel-mirror:
-    type: string
-    default: "http://dl.openstack.tld/wheels"
-    description: "Python wheel packages mirror."
   git-user-email:
     type: string
     default: "hyper-v_ci@microsoft.com"
@@ -56,6 +44,23 @@ options:
       In cases where there is only one interface on the system, the vmswitch will be created using that
       interface and OSManagement will be set to True, regardless of the vmswitch-management option.
       Avoid using the management interface as a data interface where system has more then one NIC.
+  os-data-network:
+    type: string
+    description: |
+      The IP address and netmask of the OpenStack Data network (e.g.,
+      192.168.0.0/24) . This network will be used for tenant network traffic in
+      overlay networks.
+      NOTE: If ovs is selected as the network type, this option overrides
+      data-port. OVS on Windows requires that the os data network be set on the
+      vmswitch itself. That means that if an interface has an IP in the os-data-network
+      range, that interface will be added to the vmswitch. There is a caveat here.
+      If os-data-network is on a different interface then data-port, it might result
+      in the hyper-v compute nodes not being able to use VLAN network segregation.
+  ovs-installer-url:
+    type: string
+    default: "https://www.cloudbase.it/downloads/openvswitch-hyperv-installer-beta.msi#md5=9fdf53bb41dd398843a0ac52fe023a65"
+    description: |
+      Location of the OVS MSI installer
   vmswitch-management:
     default: False
     type: boolean
@@ -69,6 +74,13 @@ options:
     default: ""
     type: string
     description: "User name of the AD user that will be used by this Hyper-V node."
+  network-type:
+    type: string
+    default: hyperv
+    description: |
+      Neutron agent to use. Valid options are:
+        * hyperv
+        * ovs
   git-url:
     type: string
     default: "https://github.com/msysgit/msysgit/releases/download/Git-1.9.5-preview20150319/Git-1.9.5-preview20150319.exe"
@@ -82,14 +94,6 @@ options:
     default: "https://www.python.org/ftp/python/2.7.10/python-2.7.10.msi"
     description: |
       URL used to download Python 2.7.x for Windows. Optionally, a checksum
-      supported by the 'Get-FileHash' PowerShell cmdlet can be provided to
-      check file integrity.
-      Syntax is: "<url>#<hash_algorithm><checksum>"
-  7z-url:
-    type: string
-    default: "http://www.7-zip.org/a/7z938.exe"
-    description: |
-      URL used to download 7z installer for Windows. Optionally, a checksum
       supported by the 'Get-FileHash' PowerShell cmdlet can be provided to
       check file integrity.
       Syntax is: "<url>#<hash_algorithm><checksum>"

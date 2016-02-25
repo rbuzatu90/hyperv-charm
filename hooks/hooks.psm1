@@ -1,8 +1,12 @@
 $ErrorActionPreference = 'Stop'
 
 try {
-    $charmHelpersPath = Join-Path (Split-Path $PSScriptRoot) "lib\Modules\CharmHelpers"
-    Import-Module -Force -DisableNameChecking $charmHelpersPath
+    Import-Module JujuUtils
+    Import-Module JujuHooks
+    Import-Module JujuLogging
+    Import-Module JujuHelper
+    Import-Module JujuWindowsUtils
+    Import-Module ADCharmUtils
 } catch {
     juju-log.exe "ERROR while loading PowerShell charm helpers: $_"
     exit 1
@@ -10,72 +14,160 @@ try {
 
 $NEUTRON_GIT           = "https://github.com/openstack/neutron.git"
 $NOVA_GIT              = "https://github.com/openstack/nova.git"
-$NETWORKING_HYPERV_GIT = "https://github.com/stackforge/networking-hyperv.git"
+$NETWORKING_HYPERV_GIT = "https://github.com/openstack/networking-hyperv.git"
 
-$OPENSTACK_DIR = Join-Path $env:SystemDrive "OpenStack"
-$PYTHON_DIR    = Join-Path $env:SystemDrive "Python27"
-$LIB_DIR       = Join-Path $PYTHON_DIR "lib\site-packages"
-$BUILD_DIR     = Join-Path $OPENSTACK_DIR "build"
-$INSTANCES_DIR = Join-Path $OPENSTACK_DIR "Instances"
-$BIN_DIR       = Join-Path $OPENSTACK_DIR "bin"
-$CONFIG_DIR    = Join-Path $OPENSTACK_DIR "etc"
-$LOG_DIR       = Join-Path $OPENSTACK_DIR "log"
-$SERVICE_DIR   = Join-Path $OPENSTACK_DIR "service"
-$FILES_DIR     = Join-Path ${env:CHARM_DIR} "files"
-
-$NOVA_SERVICE_NAME        = "nova-compute"
-$NOVA_SERVICE_DESCRIPTION = "OpenStack nova Compute Service"
-$NOVA_SERVICE_EXECUTABLE  = Join-Path $PYTHON_DIR "Scripts\nova-compute.exe"
-$NOVA_SERVICE_CONFIG      = Join-Path $CONFIG_DIR "nova.conf"
-
-$NEUTRON_SERVICE_NAME        = "neutron-hyperv-agent"
-$NEUTRON_SERVICE_DESCRIPTION = "OpenStack Neutron Hyper-V Agent Service"
-$NEUTRON_SERVICE_EXECUTABLE  = Join-Path $PYTHON_DIR "Scripts\neutron-hyperv-agent.exe"
-$NEUTRON_SERVICE_CONFIG      = Join-Path $CONFIG_DIR "neutron_hyperv_agent.conf"
-
-$PYTHON_PROCESS_NAME = "python"
-
-$VALID_HASHING_ALGORITHMS = @('SHA1', 'SHA256', 'SHA384', 'SHA512',
-                              'MACTripleDES', 'MD5', 'RIPEMD160')
-
+$OPENSTACK_DIR  = Join-Path $env:SystemDrive "OpenStack"
+$PYTHON_DIR     = Join-Path $env:SystemDrive "Python27"
+$LIB_DIR        = Join-Path $PYTHON_DIR "lib\site-packages"
+$BUILD_DIR      = Join-Path $OPENSTACK_DIR "build"
+$INSTANCES_DIR  = Join-Path $OPENSTACK_DIR "Instances"
+$BIN_DIR        = Join-Path $OPENSTACK_DIR "bin"
+$CONFIG_DIR     = Join-Path $OPENSTACK_DIR "etc"
+$LOG_DIR        = Join-Path $OPENSTACK_DIR "log"
+$SERVICE_DIR    = Join-Path $OPENSTACK_DIR "service"
+$FILES_DIR      = Join-Path ${env:CHARM_DIR} "files"
+$NOVA_DIR       = "${env:ProgramFiles}\Cloudbase Solutions\OpenStack\Nova"
+$OVS_DIR        = "${env:ProgramFiles}\Cloudbase Solutions\Open vSwitch"
+$OVS_VSCTL      = Join-Path $OVS_DIR "bin\ovs-vsctl.exe"
+$env:OVS_RUNDIR = Join-Path $env:ProgramData "openvswitch"
+$OVS_EXT_NAME   = "Open vSwitch Extension"
 
 function Get-TemplatesDir {
     return (Join-Path (Get-JujuCharmDir) "templates")
 }
 
 
-function Unzip-With7z {
-    Param(
-        [string]$ZipPath,
-        [string]$DestinationFolder
-    )
-
-    Execute-ExternalCommand -Command { 7z.exe x -y $ZipPath -o"$DestinationFolder" } `
-                            -ErrorMessage "Failed to unzip $ZipPath."
-}
-
-
-function Get-ADContext {
-    $ctx =  @{
-        "ad_host"        = "private-address";
-        "ip_address"     = "address";
-        "ad_hostname"    = "hostname";
-        "ad_username"    = "username";
-        "ad_password"    = "password";
-        "ad_domain"      = "domainName";
-        "ad_credentials" = "adcredentials";
-    }
-    return (Get-JujuRelationParams 'ad-join' $ctx)
-}
-
-
 function Get-DevStackContext {
-    $ctx =  @{
+    $requiredCtx =  @{
         "devstack_ip"       = "devstack_ip";
         "devstack_password" = "password";
         "rabbit_user"       = "rabbit_user";
     }
-    return (Get-JujuRelationParams 'devstack' $ctx)
+    $ctx = Get-JujuRelationContext -Relation 'devstack' -RequiredContext $requiredCtx
+
+    # Required context not found
+    if(!$ctx.Count) {
+        return @{}
+    }
+
+    return $ctx
+}
+
+
+function Get-SystemContext {
+    $systemCtxt = @{
+        "instances_path"      = Join-Path $OPENSTACK_DIR "Instances";
+        "interfaces_template" = Join-Path $CONFIG_DIR "interfaces.template";
+        "policy_file"         = Join-Path $CONFIG_DIR "policy.json";
+        "mkisofs_exe"         = Join-Path $BIN_DIR "mkisofs.exe";
+        "log_directory"       = $LOG_DIR;
+        "qemu_img_exe"        = Join-Path $BIN_DIR "qemu-img.exe";
+        "vswitch_name"        = Get-JujuVMSwitchName
+        "install_dir"         = $NOVA_DIR;
+        "local_ip"            = (Get-JujuUnit 'private-address');
+    }
+    return $systemCtxt
+}
+
+
+function Get-CharmServices {
+    $services = @{
+        'nova' = @{
+            'description'  = "OpenStack nova Compute Service";
+            'binary' = Join-Path $PYTHON_DIR "Scripts\nova-compute.exe";
+            'config' = Join-Path $CONFIG_DIR "nova.conf";
+            'template' = Join-Path (Get-TemplatesDir) "nova.conf";
+            'service_name' = 'nova-compute';
+            "context_generators" = @(
+                @{
+                    "generator" = "Get-DevStackContext";
+                    "relation"  = "devstack";
+                },
+                @{
+                    "generator" = "Get-SystemContext";
+                    "relation"  = "system";
+                }
+            );
+        };
+        'neutron' = @{
+            'description' = "OpenStack Neutron Hyper-V Agent Service";
+            'binary' = (Join-Path $PYTHON_DIR "Scripts\neutron-hyperv-agent.exe");
+            'config' = (Join-Path $CONFIG_DIR "neutron_hyperv_agent.conf");
+            'template' = Join-Path (Get-TemplatesDir) "neutron_hyperv_agent.conf";
+            'service_name' = "neutron-hyperv-agent";
+            "context_generators" = @(
+                @{
+                    "generator" = "Get-DevStackContext";
+                    "relation"  = "devstack";
+                },
+                @{
+                    "generator" = "Get-SystemContext";
+                    "relation"  = "system";
+                }
+            );
+        };
+        'neutron-ovs' = @{
+            'description' = "OpenStack Neutron Open vSwitch Agent Service";
+            'binary' = (Join-Path $PYTHON_DIR "Scripts\neutron-openvswitch-agent.exe");
+            'config' = (Join-Path $NOVA_DIR "etc\ml2_conf.ini");
+            'template' = Join-Path (Get-TemplatesDir) "ml2_conf.ini";
+            'service_name' = "neutron-openvswitch-agent";
+            "context_generators" = @(
+                @{
+                    "generator" = "Get-DevStackContext";
+                    "relation"  = "devstack";
+                },
+                @{
+                    "generator" = "Get-SystemContext";
+                    "relation"  = "system";
+                }
+            );
+        }
+    }
+}
+
+
+function Write-ConfigFile {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$ServiceName
+    )
+    $JujuCharmServices = Get-CharmServices
+    $should_restart = $true
+    $service = $JujuCharmServices[$ServiceName]
+    if (!$service){
+        Write-JujuWarning "No such service $ServiceName. Not generating config"
+        return $false
+    }
+    $config = gc $service["template"]
+    # populate config with variables from context
+    
+    $incompleteContexts = [System.Collections.Generic.List[object]](New-Object "System.Collections.Generic.List[object]")
+    $allContexts = [System.Collections.Generic.List[object]](New-Object "System.Collections.Generic.List[object]")
+
+    foreach ($context in $service['context_generators']){
+        Write-JujuInfo ("Getting context for {0}" -f $context["relation"])
+        $allContexts.Add($context["relation"])
+        $ctx = & $context["generator"]
+        Write-JujuInfo ("Got {0} context: {1}" -f @($context["relation"], $ctx.Keys))
+        if (!$ctx.Count){
+            # Context is empty. Probably peer not ready
+            Write-JujuWarning "Context for $context is EMPTY"
+            $incompleteContexts.Add($context["relation"])
+            $should_restart = $false
+            continue
+        }
+        foreach ($val in $ctx.GetEnumerator()) {
+            $regex = "{{[\s]{0,}" + $val.Name + "[\s]{0,}}}"
+            $config = $config -Replace $regex,$val.Value
+        }
+    }
+    Set-IncompleteStatusContext -ContextSet $allContexts -Incomplete $incompleteContexts
+    # Any variables not available in context we remove
+    $config = $config -Replace "{{[\s]{0,}[a-zA-Z0-9_-]{0,}[\s]{0,}}}",""
+    Set-Content $service["config"] $config
+    # Restart-Service $service["service"]
+    return $should_restart
 }
 
 
@@ -88,7 +180,7 @@ function Get-URLChecksum {
         [string]$URLConfigKey
     )
 
-    $url = Get-JujuCharmConfig -scope $URLConfigKey
+    $url = Get-JujuCharmConfig -Scope $URLConfigKey
     if ($url.contains('#')) {
         $urlSplit = $url.split('#')
         $algorithm = $urlSplit[1]
@@ -97,11 +189,13 @@ function Get-URLChecksum {
                    "Use the format: <hashing_algorithm>=<checksum>")
         }
 
+        $validHashingAlgorithms = @('SHA1', 'SHA256', 'SHA384', 'SHA512',
+                                    'MACTripleDES', 'MD5', 'RIPEMD160')
         $algorithmSplit = $algorithm.split('=')
         $hashingAlgorithm = $algorithmSplit[0]
-        if ($hashingAlgorithm -notin $VALID_HASHING_ALGORITHMS) {
+        if ($hashingAlgorithm -notin $validHashingAlgorithms) {
             Throw ("Invalid hashing algorithm format! " +
-                   "Valid formats are: " + $VALID_HASHING_ALGORITHMS)
+                   "Valid formats are: " + $validHashingAlgorithms)
         }
 
         $checksum = $algorithmSplit[1]
@@ -113,22 +207,6 @@ function Get-URLChecksum {
     return @{ 'URL' = $url;
               'CHECKSUM' = $null;
               'HASHING_ALGORITHM' = $null }
-}
-
-
-function Check-FileIntegrity {
-    Param(
-        [string]$FilePath,
-        [ValidateScript({$_ -in $VALID_HASHING_ALGORITHMS})]
-        [string]$Algorithm,
-        [string]$Checksum
-    )
-
-    $hash = (Get-FileHash -Path $FilePath -Algorithm $Algorithm).Hash
-    if ($hash -eq $Checksum) {
-        return $true
-    }
-    return $false
 }
 
 
@@ -147,19 +225,14 @@ function Get-PackagePath {
     $packagePath = Join-Path $env:TEMP $URL.Split('/')[-1]
     if (Test-Path $packagePath) {
         if ($Checksum -and $HashingAlgorithm) {
-            if (Check-FileIntegrity $packagePath $HashingAlgorithm $Checksum) {
+            if (Test-FileIntegrity $packagePath $Checksum $HashingAlgorithm) {
                 return $packagePath
             }
         }
         Remove-Item -Recurse -Force -Path $packagePath
     }
+    Invoke-FastWebRequest -Uri "$URL#$HashingAlgorithm=$Checksum" -OutFile $packagePath
 
-    $packagePath = Download-File -DownloadLink $URL -DestinationFile $packagePath
-    if ($Checksum -and $HashingAlgorithm) {
-        if (!(Check-FileIntegrity $packagePath $HashingAlgorithm $Checksum)) {
-            Throw "Wrong $HashingAlgorithm checksum for $URL"
-        }
-    }
     return $packagePath
 }
 
@@ -190,7 +263,7 @@ function Install-Package {
     $stat = Start-Process -FilePath $installerPath -ArgumentList $ArgumentList `
                           -PassThru -Wait
     if ($stat.ExitCode -ne 0) {
-        throw "Package failed to install."
+        throw "Package '$URL' failed to install."
     }
     Remove-Item $installerPath
 
@@ -198,7 +271,7 @@ function Install-Package {
 }
 
 
-function Run-GitClonePull {
+function Start-GitClonePull {
     Param(
         [string]$Path,
         [string]$URL,
@@ -206,40 +279,40 @@ function Run-GitClonePull {
     )
 
     if (!(Test-Path -Path $Path)) {
-        ExecuteWith-Retry {
-            Execute-ExternalCommand -Command { git clone $URL $Path } `
-                                    -ErrorMessage "Git clone failed"
+        Start-ExecuteWithRetry {
+            Start-ExternalCommand -ScriptBlock { git clone $URL $Path } 
+                                  -ErrorMessage "Git clone failed"
         }
-        Execute-ExternalCommand -Command { git checkout $Branch } `
-                                -ErrorMessage "Git checkout failed"
+        Start-ExternalCommand -ScriptBlock { git checkout $Branch } `
+                              -ErrorMessage "Git checkout failed"
     } else {
         pushd $Path
         try {
             $gitPath = Join-Path $Path ".git"
             if (!(Test-Path -Path $gitPath)) {
                 Remove-Item -Recurse -Force *
-                ExecuteWith-Retry {
-                    Execute-ExternalCommand -Command { git clone $URL $Path } `
-                                            -ErrorMessage "Git clone failed"
+                Start-ExecuteWithRetry {
+                    Start-ExternalCommand -ScriptBlock { git clone $URL $Path } `
+                                          -ErrorMessage "Git clone failed"
                 }
             } else {
-                ExecuteWith-Retry {
-                    Execute-ExternalCommand -Command { git fetch --all } `
-                                            -ErrorMessage "Git fetch failed"
+                Start-ExecuteWithRetry {
+                    Start-ExternalCommand -ScriptBlock { git fetch --all } `
+                                          -ErrorMessage "Git fetch failed"
                 }
             }
-            ExecuteWith-Retry {
-                Execute-ExternalCommand -Command { git checkout $Branch } `
-                                        -ErrorMessage "Git checkout failed"
+            Start-ExecuteWithRetry {
+                Start-ExternalCommand -ScriptBlock { git checkout $Branch } `
+                                      -ErrorMessage "Git checkout failed"
             }
             Get-ChildItem . -Include *.pyc -Recurse | foreach ($_) { Remove-Item $_.fullname }
-            Execute-ExternalCommand -Command { git reset --hard } `
-                                    -ErrorMessage "Git reset failed"
-            Execute-ExternalCommand -Command { git clean -f -d } `
-                                    -ErrorMessage "Git clean failed"
-            ExecuteWith-Retry {
-                Execute-ExternalCommand -Command { git pull } `
-                                        -ErrorMessage "Git pull failed"
+            Start-ExternalCommand -ScriptBlock { git reset --hard } `
+                                  -ErrorMessage "Git reset failed"
+            Start-ExternalCommand -ScriptBlock { git clean -f -d } `
+                                  -ErrorMessage "Git clean failed"
+            Start-ExecuteWithRetry {
+                Start-ExternalCommand -ScriptBlock { git pull } `
+                                      -ErrorMessage "Git pull failed"
             }
         } finally {
             popd
@@ -253,18 +326,12 @@ function Install-OpenStackProjectFromRepo {
         [string]$ProjectPath
     )
 
-#    $requirements = Join-Path $ProjectPath "requirements.txt"
-#    if((test-path $requirements)){
-#        Execute-ExternalCommand -Command { pip install -r $requirements } `
-#                            -ErrorMessage "Failed to install requirements from $ProjectPath."
-#    }
-    Execute-ExternalCommand -Command { pip install -e $ProjectPath } `
-                            -ErrorMessage "Failed to install $ProjectPath from repo."
-    popd
+    Start-ExternalCommand -ScriptBlock { pip install -e $ProjectPath } `
+                          -ErrorMessage "Failed to install $ProjectPath from repo."
 }
 
 
-function Run-GerritGitPrep {
+function Start-GerritGitPrep {
     Param(
         [Parameter(Mandatory=$True)]
         [string]$ZuulUrl,
@@ -303,8 +370,8 @@ function Run-GerritGitPrep {
     if (!(Test-Path -Path $projectDir -PathType Container)) {
         mkdir $projectDir
         try {
-            Execute-ExternalCommand { git clone "$GitOrigin/$ZuulProject" $projectDir } `
-                -ErrorMessage "Failed to clone $GitOrigin/$ZuulProject"
+            Start-ExternalCommand -ScriptBlock { git clone "$GitOrigin/$ZuulProject" $projectDir } `
+                                  -ErrorMessage "Failed to clone $GitOrigin/$ZuulProject"
         } catch {
             rm -Recurse -Force $projectDir
             Throw $_
@@ -313,96 +380,254 @@ function Run-GerritGitPrep {
 
     pushd $projectDir
 
-    Execute-ExternalCommand { git remote set-url origin "$GitOrigin/$ZuulProject" } `
+    Start-ExternalCommand { git remote set-url origin "$GitOrigin/$ZuulProject" } `
         -ErrorMessage "Failed to set origin: $GitOrigin/$ZuulProject"
 
     try {
-        Execute-ExternalCommand { git remote update } -ErrorMessage "Failed to update remote"
+        Start-ExternalCommand { git remote update } -ErrorMessage "Failed to update remote"
     } catch {
         Write-JujuLog "The remote update failed, so garbage collecting before trying again."
-        Execute-ExternalCommand { git gc } -ErrorMessage "Failed to run git gc."
-        Execute-ExternalCommand { git remote update } -ErrorMessage "Failed to update remote"
+        Start-ExternalCommand { git gc } -ErrorMessage "Failed to run git gc."
+        Start-ExternalCommand { git remote update } -ErrorMessage "Failed to update remote"
     }
 
-    Execute-ExternalCommand { git reset --hard } -ErrorMessage "Failed to git reset"
+    Start-ExternalCommand { git reset --hard } -ErrorMessage "Failed to git reset"
     try {
-        Execute-ExternalCommand { git clean -x -f -d -q } -ErrorMessage "Failed to git clean"
+        Start-ExternalCommand { git clean -x -f -d -q } -ErrorMessage "Failed to git clean"
     } catch {
         sleep 1
-        Execute-ExternalCommand { git clean -x -f -d -q } -ErrorMessage "Failed to git clean"
+        Start-ExternalCommand { git clean -x -f -d -q } -ErrorMessage "Failed to git clean"
     }
 
     echo "Before doing git checkout:"
     echo "Git branch output:"
-    Execute-ExternalCommand { git branch } -ErrorMessage "Failed to show git branch."
+    Start-ExternalCommand { git branch } -ErrorMessage "Failed to show git branch."
     echo "Git log output:"
-    Execute-ExternalCommand { git log -10 --pretty=format:"%h - %an, %ae, %ar : %s" } `
+    Start-ExternalCommand { git log -10 --pretty=format:"%h - %an, %ae, %ar : %s" } `
         -ErrorMessage "Failed to show git log."
 
     $ret = echo "$ZuulRef" | Where-Object { $_ -match "^refs/tags/" }
     if ($ret) {
-        Execute-ExternalCommand { git fetch --tags "$ZuulUrl/$ZuulProject" } `
+        Start-ExternalCommand { git fetch --tags "$ZuulUrl/$ZuulProject" } `
             -ErrorMessage "Failed to fetch tags from: $ZuulUrl/$ZuulProject"
-        Execute-ExternalCommand { git checkout $ZuulRef } `
+        Start-ExternalCommand { git checkout $ZuulRef } `
             -ErrorMessage "Failed to fetch tags to: $ZuulRef"
-        Execute-ExternalCommand { git reset --hard $ZuulRef } `
+        Start-ExternalCommand { git reset --hard $ZuulRef } `
             -ErrorMessage "Failed to hard reset to: $ZuulRef"
     } elseif (!$ZuulNewrev) {
-        Execute-ExternalCommand { git fetch "$ZuulUrl/$ZuulProject" $ZuulRef } `
+        Start-ExternalCommand { git fetch "$ZuulUrl/$ZuulProject" $ZuulRef } `
             -ErrorMessage "Failed to fetch: $ZuulUrl/$ZuulProject $ZuulRef"
-        Execute-ExternalCommand { git checkout FETCH_HEAD } `
+        Start-ExternalCommand { git checkout FETCH_HEAD } `
             -ErrorMessage "Failed to checkout FETCH_HEAD"
-        Execute-ExternalCommand { git reset --hard FETCH_HEAD } `
+        Start-ExternalCommand { git reset --hard FETCH_HEAD } `
             -ErrorMessage "Failed to hard reset FETCH_HEAD"
     } else {
-        Execute-ExternalCommand { git checkout $ZuulNewrev } `
+        Start-ExternalCommand { git checkout $ZuulNewrev } `
             -ErrorMessage "Failed to checkout $ZuulNewrev"
-        Execute-ExternalCommand { git reset --hard $ZuulNewrev } `
+        Start-ExternalCommand { git reset --hard $ZuulNewrev } `
             -ErrorMessage "Failed to hard reset $ZuulNewrev"
     }
 
     try {
-        Execute-ExternalCommand { git clean -x -f -d -q } -ErrorMessage "Failed to git clean"
+        Start-ExternalCommand { git clean -x -f -d -q } -ErrorMessage "Failed to git clean"
     } catch {
         sleep 1
-        Execute-ExternalCommand { git clean -x -f -d -q } -ErrorMessage "Failed to git clean"
+        Start-ExternalCommand { git clean -x -f -d -q } -ErrorMessage "Failed to git clean"
     }
 
     if (Test-Path .gitmodules) {
-        Execute-ExternalCommand { git submodule init } -ErrorMessage "Failed to init submodule"
-        Execute-ExternalCommand { git submodule sync } -ErrorMessage "Failed to sync submodule"
-        Execute-ExternalCommand { git submodule update --init } -ErrorMessage "Failed to update submodule"
+        Start-ExternalCommand { git submodule init } -ErrorMessage "Failed to init submodule"
+        Start-ExternalCommand { git submodule sync } -ErrorMessage "Failed to sync submodule"
+        Start-ExternalCommand { git submodule update --init } -ErrorMessage "Failed to update submodule"
     }
 
     echo "Final result:"
     echo "Git branch output:"
-    Execute-ExternalCommand { git branch } -ErrorMessage "Failed to show git branch."
+    Start-ExternalCommand { git branch } -ErrorMessage "Failed to show git branch."
     echo "Git log output:"
-    Execute-ExternalCommand { git log -10 --pretty=format:"%h - %an, %ae, %ar : %s" } `
+    Start-ExternalCommand { git log -10 --pretty=format:"%h - %an, %ae, %ar : %s" } `
         -ErrorMessage "Failed to show git log."
 
     popd
 }
 
 
-function Render-ConfigFile {
-    Param(
-        [string]$TemplatePath,
-        [string]$ConfPath,
-        [HashTable]$Configs
-    )
+function Install-Nova {
+    Write-JujuLog "Installing nova..."
 
-    $template = Get-Content $TemplatePath
-    foreach ($config in $Configs.GetEnumerator()) {
-        $regex = "{{\s*" + $config.Name + "\s*}}"
-        $template = $template | ForEach-Object { $_ -replace $regex,$config.Value }
+    $openstackBuild = Join-Path $BUILD_DIR "openstack"
+    Start-ExecuteWithRetry {
+        Install-OpenStackProjectFromRepo "$openstackBuild\nova"
+    }
+    $novaBin = (Get-CharmServices)['nova']['binary']
+    if (!(Test-Path $novaBin)) {
+        Throw "$novaBin was not found."
     }
 
-    Set-Content $ConfPath $template
+    Write-JujuLog "Copying default config files..."
+    $defaultConfigFiles = @('rootwrap.d', 'api-paste.ini', 'cells.json',
+                            'policy.json','rootwrap.conf')
+    foreach ($config in $defaultConfigFiles) {
+        Copy-Item -Recurse -Force "$openstackBuild\nova\etc\nova\$config" $CONFIG_DIR
+    }
+    Copy-Item -Force (Join-Path (Get-TemplatesDir) "interfaces.template") $CONFIG_DIR
 }
 
 
-function Create-Environment {
+function Install-Neutron {
+    Write-JujuLog "Installing neutron..."
+
+    $openstackBuild = Join-Path $BUILD_DIR "openstack"
+    Start-ExecuteWithRetry {
+        Install-OpenStackProjectFromRepo "$openstackBuild\neutron"
+    }
+    $neutronBin = (Get-CharmServices)['neutron']['binary']
+    if (!(Test-Path $neutronBin)) {
+        Throw "$neutronBin was not found."
+    }
+}
+
+
+function Install-NetworkingHyperV {
+    Write-JujuLog "Installing networking-hyperv..."
+
+    $openstackBuild = Join-Path $BUILD_DIR "openstack"
+    Start-ExecuteWithRetry {
+        Install-OpenStackProjectFromRepo "$openstackBuild\networking-hyperv"
+    }
+}
+
+
+function Install-OVS {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$InstallerPath
+    )
+
+    Write-JujuInfo "Running OVS install"
+    $ovs = Get-ManagementObject -Class Win32_Product | Where-Object {$_.Name -match "open vswitch"}
+    if ($ovs){
+        Write-JujuInfo "OVS is already installed"
+        return $true
+    }
+
+    $hasInstaller = Test-Path $InstallerPath
+    if($hasInstaller -eq $false){
+        $InstallerPath = Get-OVSInstaller
+    }
+    Write-JujuInfo "Installing from $InstallerPath"
+    $ret = Start-Process -FilePath msiexec.exe -ArgumentList "INSTALLDIR=`"$ovsInstallDir`"","/qb","/l*v","$env:APPDATA\ovs-log.txt","/i","$InstallerPath" -Wait -PassThru
+    if($ret.ExitCode) {
+        Throw "Failed to install OVS: $LASTEXITCODE"
+    }
+    Remove-Item $InstallerPath
+    return $true
+}
+
+
+function Get-OVSInstaller {
+    $urlChecksum = Get-URLChecksum "ovs-installer-url"
+    $location = Get-PackagePath $urlChecksum['URL'] $urlChecksum['checksum'] `
+                                $urlChecksum['HASHING_ALGORITHM']
+    return $location
+}
+
+
+function Check-OVSPrerequisites {
+    try {
+        $ovsdbSvc = Get-Service "ovsdb-server"
+        $ovsSwitchSvc = Get-Service "ovs-vswitchd"
+    } catch {
+        $InstallerPath = Get-OVSInstaller
+        Install-OVS $InstallerPath
+    }
+    if(!(Test-Path $OVS_VSCTL)){
+        Throw "Could not find ovs-vsctl.exe in location: $OVS_VSCTL"
+    }
+}
+
+
+function Enable-OVSExtension {
+    $ext = Get-OVSExtStatus
+    if (!$ext){
+       Throw "Cannot enable OVS extension. Not installed"
+    }
+    if (!$ext.Enabled) {
+        Enable-VMSwitchExtension $ovsExtName $ext.SwitchName
+    }
+    return $true
+}
+
+
+function Get-OVSExtStatus {
+    $br = Get-JujuVMSwitchName
+    Write-JujuInfo "Switch name is $br"
+    $ext = Get-VMSwitchExtension -VMSwitchName $br -Name $ovsExtName
+
+    if (!$ext){
+        Write-JujuInfo "Open vSwitch extension not installed"
+        return $null
+    }
+
+    return $ext
+}
+
+
+function Enable-OVS {
+    Enable-OVSExtension
+
+    Enable-Service "ovsdb-server"
+    Enable-Service "ovs-vswitchd"
+
+    Start-Service "ovsdb-server"
+    Start-Service "ovs-vswitchd"
+}
+
+
+function Ensure-InternalOVSInterfaces {
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", "external.1")
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", "internal")
+}
+
+
+function Initialize-GitRepositories {
+    Param(
+        [ValidateSet("hyperv", "ovs")]
+        [string]$NetworkType,
+        [string]$BranchName
+        [ValidateSet("openstack/nova", "openstack/neutron", "stackforge/networking-hyperv")]
+        [string]$BuildFor,
+    )
+
+    Write-JujuLog "Cloning the required Git repositories..."
+
+    $openstackBuild = Join-Path $BUILD_DIR "openstack"
+    if ($NetworkType -eq 'hyperv') {
+        if ($BuildFor -eq "stackforge/networking-hyperv") {
+            Write-JujuLog "Cloning $NOVA_GIT from $BranchName..."
+            Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\nova" $NOVA_GIT $BranchName }
+            Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName..."
+            Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\neutron" $NEUTRON_GIT $BranchName }
+        } else {
+            Write-JujuLog "Cloning $NETWORKING_HYPERV_GIT from master..."
+            Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\networking-hyperv" $NETWORKING_HYPERV_GIT "master" }
+        }
+    }
+
+    if ($BuildFor -eq "openstack/nova") {
+        Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName..."
+        Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\neutron" $NEUTRON_GIT $BranchName }
+    }
+
+    if (($BuildFor -eq "openstack/neutron") -or ($BuildFor -eq "openstack/quantum")) {
+        Write-JujuLog "Cloning $NOVA_GIT from $BranchName..."
+        Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\nova" $NOVA_GIT $BranchName }
+    }
+}
+
+
+function Initialize-Environment {
     Param(
         [string]$BranchName='master',
         [string]$BuildFor='openstack/nova'
@@ -421,115 +646,25 @@ function Create-Environment {
     if (!(Test-Path $mkisofsPath) -or !(Test-Path $qemuimgPath)) {
         Write-JujuLog "Downloading OpenStack binaries..."
         $zipPath = Join-Path $FILES_DIR "openstack_bin.zip"
-        Unzip-With7z $zipPath $BIN_DIR
+        Expand-ZipArchive $zipPath $BIN_DIR
     }
 
-    Write-JujuLog "Cloning the required Git repositories..."
-    $openstackBuild = Join-Path $BUILD_DIR "openstack"
-    if ($BuildFor -eq "openstack/nova") {
-        Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName..."
-        ExecuteWith-Retry {
-            Run-GitClonePull "$openstackBuild\neutron" $NEUTRON_GIT $BranchName
-        }
-        Write-JujuLog "Cloning $NETWORKING_HYPERV_GIT from master..."
-        ExecuteWith-Retry {
-            Run-GitClonePull "$openstackBuild\networking-hyperv" $NETWORKING_HYPERV_GIT "master"
-        }
-    } elseif (($BuildFor -eq "openstack/neutron") -or ($BuildFor -eq "openstack/quantum")) {
-        Write-JujuLog "Cloning $NOVA_GIT from $BranchName..."
-        ExecuteWith-Retry {
-            Run-GitClonePull "$openstackBuild\nova" $NOVA_GIT $BranchName
-        }
-        Write-JujuLog "Cloning $NETWORKING_HYPERV_GIT from master..."
-        ExecuteWith-Retry {
-            Run-GitClonePull "$openstackBuild\networking-hyperv" $NETWORKING_HYPERV_GIT "master"
-        }
-    } elseif ($buildFor -eq "stackforge/networking-hyperv") {
-        Write-JujuLog "Cloning $NOVA_GIT from $BranchName..."
-        ExecuteWith-Retry {
-            Run-GitClonePull "$openstackBuild\nova" $NOVA_GIT $BranchName
-        }
-        Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName..."
-        ExecuteWith-Retry {
-            Run-GitClonePull "$openstackBuild\neutron" $NEUTRON_GIT $BranchName
-        }
+    $networkType = Get-JujuCharmConfig -Scope 'network-type'
+    Initialize-GitRepositories $networkType $BranchName $BuildFor
+
+    Install-Nova
+    Install-Neutron
+    if ($networkType -eq 'hyperv') {
+        Install-NetworkingHyperV
+    } elseif ($networkType -eq 'ovs') {
+        Check-OVSPrerequisites
+        Enable-OVS
+        Ensure-InternalOVSInterfaces
     } else {
-        Throw "Cannot build for project: $BuildFor"
+        Throw "Wrong network type config: '$networkType'"
     }
-
-    Write-JujuLog "Installing neutron..."
-    ExecuteWith-Retry {
-        Install-OpenStackProjectFromRepo "$openstackBuild\neutron"
-    }
-    if (!(Test-Path $NEUTRON_SERVICE_EXECUTABLE)) {
-        Throw "$NEUTRON_SERVICE_EXECUTABLE was not found."
-    }
-
-    Write-JujuLog "Installing networking-hyperv..."
-    ExecuteWith-Retry {
-        Install-OpenStackProjectFromRepo "$openstackBuild\networking-hyperv"
-    }
-
-    Write-JujuLog "Installing nova..."
-    ExecuteWith-Retry {
-        Install-OpenStackProjectFromRepo "$openstackBuild\nova"
-    }
-    if (!(Test-Path $NOVA_SERVICE_EXECUTABLE)) {
-        Throw "$NOVA_SERVICE_EXECUTABLE was not found."
-    }
-
-    Write-JujuLog "Copying default config files..."
-    $defaultConfigFiles = @('rootwrap.d', 'api-paste.ini', 'cells.json',
-                            'policy.json','rootwrap.conf')
-    foreach ($config in $defaultConfigFiles) {
-        Copy-Item -Recurse -Force "$openstackBuild\nova\etc\nova\$config" $CONFIG_DIR
-    }
-    Copy-Item -Force (Join-Path (Get-TemplatesDir) "interfaces.template") $CONFIG_DIR
 
     Write-JujuLog "Environment initialization done."
-}
-
-
-function Generate-ConfigFiles {
-    Param(
-        [string]$DevStackIP,
-        [string]$DevStackPassword,
-        [string]$RabbitUser
-    )
-
-    Write-JujuLog "Generating Nova config file"
-    $novaTemplate = Join-Path (Get-TemplatesDir) "nova.conf"
-    $configs = @{
-        "instances_path"      = Join-Path $OPENSTACK_DIR "Instances";
-        "interfaces_template" = Join-Path $CONFIG_DIR "interfaces.template";
-        "policy_file"         = Join-Path $CONFIG_DIR "policy.json";
-        "mkisofs_exe"         = Join-Path $BIN_DIR "mkisofs.exe";
-        "devstack_ip"         = $DevStackIP;
-        "rabbit_user"         = $RabbitUser;
-        "rabbit_password"     = $DevStackPassword;
-        "log_directory"       = $LOG_DIR;
-        "qemu_img_exe"        = Join-Path $BIN_DIR "qemu-img.exe";
-        "admin_password"      = $DevStackPassword;
-        "vswitch_name"        = Get-JujuVMSwitchName
-    }
-    Render-ConfigFile -TemplatePath $novaTemplate `
-                      -ConfPath $NOVA_SERVICE_CONFIG `
-                      -Configs $configs
-
-    Write-JujuLog "Generating Neutron config file"
-    $neutronTemplate = Join-Path (Get-TemplatesDir) "neutron_hyperv_agent.conf"
-    $configs = @{
-        "policy_file"     = Join-Path $CONFIG_DIR "policy.json";
-        "devstack_ip"     = $DevStackIP;
-        "rabbit_user"     = $RabbitUser;
-        "rabbit_password" = $DevStackPassword;
-        "log_directory"   = $LOG_DIR;
-        "admin_password"  = $DevStackPassword;
-        "vswitch_name"    = Get-JujuVMSwitchName
-    }
-    Render-ConfigFile -TemplatePath $neutronTemplate `
-                      -ConfPath $NEUTRON_SERVICE_CONFIG `
-                      -Configs $configs
 }
 
 
@@ -548,13 +683,12 @@ function Set-ServiceAcountCredentials {
         $service = Get-WMIObject -Namespace "root\cimv2" -Class Win32_Service -Filter $filter
     }
 
-    Set-UserLogonAsServiceRights $ServiceUser
-
-    $service.Change($null, $null, $null, $null, $null, $null, $ServiceUser, $ServicePassword)
+    Grant-Privilege $ServiceUser "SeServiceLogonRight"
+    Set-ServiceLogon @($ServiceName) $ServiceUser $ServicePassword
 }
 
 
-function Create-OpenStackService {
+function New-OpenStackService {
     Param(
         [string]$ServiceName,
         [string]$ServiceDescription,
@@ -577,11 +711,8 @@ function Create-OpenStackService {
         Copy-Item "$FILES_DIR\$serviceFileName" "$SERVICE_DIR\$serviceFileName"
     }
 
-    New-Service -Name "$ServiceName" `
+    New-Service -Name "$ServiceName" -DisplayName "$ServiceName" -Description "$ServiceDescription" -StartupType "Manual" `
                 -BinaryPathName "$SERVICE_DIR\$serviceFileName $ServiceName $ServiceExecutable --config-file $ServiceConfig" `
-                -DisplayName "$ServiceName" `
-                -Description "$ServiceDescription" `
-                -StartupType "Manual"
 
     if((Get-Service -Name $ServiceName).Status -eq "Running") {
         Stop-Service $ServiceName
@@ -591,7 +722,7 @@ function Create-OpenStackService {
 }
 
 
-function Poll-ServiceStatus {
+function Watch-ServiceStatus {
     Param(
         [string]$ServiceName,
         [int]$IntervalSeconds
@@ -609,7 +740,7 @@ function Poll-ServiceStatus {
 
 
 function Get-JujuVMSwitchName {
-    $VMswitchName = Get-JujuCharmConfig -scope "vmswitch-name"
+    $VMswitchName = Get-JujuCharmConfig -Scope "vmswitch-name"
     if (!$VMswitchName){
         return "br100"
     }
@@ -624,26 +755,28 @@ function Get-InterfaceFromConfig {
     )
 
     $nic = $null
-    $DataInterfaceFromConfig = Get-JujuCharmConfig -scope $ConfigOption
-    Write-JujuLog "Looking for $DataInterfaceFromConfig"
-    if ($DataInterfaceFromConfig -eq $false -or $DataInterfaceFromConfig -eq "") {
+    $DataInterfaceFromConfig = Get-JujuCharmConfig -Scope $ConfigOption
+    Write-JujuInfo "Looking for $DataInterfaceFromConfig"
+    if (!$DataInterfaceFromConfig){
+        if($MustFindAdapter) {
+            Throw "No data-port was specified"
+        }
         return $null
     }
     $byMac = @()
     $byName = @()
     $macregex = "^([a-f-A-F0-9]{2}:){5}([a-fA-F0-9]{2})$"
-    foreach ($i in $DataInterfaceFromConfig.Split()) {
-        if ($i -match $macregex) {
+    foreach ($i in $DataInterfaceFromConfig.Split()){
+        if ($i -match $macregex){
             $byMac += $i.Replace(":", "-")
-        } else {
+        }else{
             $byName += $i
         }
     }
-    Write-JujuLog "We have MAC: $byMac  Name: $byName"
-    if ($byMac.Length -ne 0){
-        $nicByMac = Get-NetAdapter | Where-Object { $_.MacAddress -in $byMac }
+    if ($byMac.Length){
+        $nicByMac = Get-NetAdapter | Where-Object { $_.MacAddress -in $byMac -and $_.DriverFileName -ne "vmswitch.sys" }
     }
-    if ($byName.Length -ne 0){
+    if ($byName.Length){
         $nicByName = Get-NetAdapter | Where-Object { $_.Name -in $byName }
     }
     if ($nicByMac -ne $null -and $nicByMac.GetType() -ne [System.Array]){
@@ -660,59 +793,142 @@ function Get-InterfaceFromConfig {
 }
 
 
-function Configure-VMSwitch {
-    $managementOS = Get-JujuCharmConfig -scope 'vmswitch-management'
-    $VMswitchName = Get-JujuVMSwitchName
-
-    try {
-        $isConfigured = Get-VMSwitch -SwitchType External -Name $VMswitchName -ErrorAction SilentlyContinue
-    } catch {
-        $isConfigured = $false
+function Get-DataPortFromDataNetwork {
+    $dataNetwork = Get-JujuCharmConfig -Scope "os-data-network"
+    if (!$dataNetwork) {
+        Write-JujuInfo "os-data-network is not defined"
+        return $false
     }
 
-    if ($isConfigured) {
-        return $true
-    }
-    $VMswitches = Get-VMSwitch -SwitchType External
-    if ($VMswitches.Count -gt 0){
-        Rename-VMSwitch $VMswitches[0] -NewName $VMswitchName
-        return $true
-    }
+    $local_ip = Get-CharmState -Namespace "novahyperv" -Key "local_ip"
+    $ifIndex = Get-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex"
 
-    $interfaces = Get-NetAdapter -Physical | Where-Object { $_.Status -eq "Up" }
-
-    if ($interfaces.GetType().BaseType -ne [System.Array]){
-        # we have ony one ethernet adapter. Going to use it for
-        # vmswitch
-        New-VMSwitch -Name $VMswitchName -NetAdapterName $interfaces.Name -AllowManagementOS $true
-        if ($? -eq $false) {
-            Throw "Failed to create vmswitch"
-        }
-    } else {
-        Write-JujuLog "Trying to fetch data port from config"
-        $nic = Get-InterfaceFromConfig -MustFindAdapter
-        Write-JujuLog "Got NetAdapterName $nic"
-        New-VMSwitch -Name $VMswitchName -NetAdapterName $nic[0].Name -AllowManagementOS $managementOS
-        if ($? -eq $false){
-            Throw "Failed to create vmswitch"
+    if($local_ip -and $ifIndex){
+        if((Confirm-LocalIP -IPaddress $ifIndex -ifIndex $ifIndex)){
+            return Get-NetAdapter -ifindex $ifIndex
         }
     }
-    $hasVM = Get-VM
-    if ($hasVM){
-        Connect-VMNetworkAdapter * -SwitchName $VMswitchName
-        Start-VM *
+
+    # If there is any network interface configured to use DHCP and did not get an IP address
+    # we manually renew its lease and try to get an IP address before searching for the data network
+    $interfaces = Get-CimInstance -Class win32_networkadapterconfiguration | Where-Object { 
+        $_.IPEnabled -eq $true -and $_.DHCPEnabled -eq $true -and $_.DHCPServer -eq "255.255.255.255"
     }
-    return $true
+    if($interfaces){
+        $interfaces.InterfaceIndex | Invoke-DHCPRenew -ErrorAction SilentlyContinue
+    }
+    $netDetails = $dataNetwork.Split("/")
+    $decimalMask = ConvertTo-Mask $netDetails[1]
+
+    $configuredAddresses = Get-NetIPAddress -AddressFamily IPv4
+    foreach ($i in $configuredAddresses) {
+        Write-JujuInfo ("Checking {0} on interface {1}" -f @($i.IPAddress, $i.InterfaceAlias))
+        if ($i.PrefixLength -ne $netDetails[1]){
+            continue
+        }
+        $network = Get-NetworkAddress $i.IPv4Address $decimalMask
+        Write-JujuInfo ("Network address for {0} is {1}" -f @($i.IPAddress, $network))
+        if ($network -eq $netDetails[0]){
+            Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $i.IPAddress
+            Set-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex" -Value $i.IfIndex
+            return Get-NetAdapter -ifindex $i.IfIndex
+        }
+    }
+    return $false
 }
 
 
-function Get-HostFromURL {
+function Get-RealInterface {
+    [CmdletBinding()]
     Param(
-        [string]$URL
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [Microsoft.Management.Infrastructure.CimInstance]$interface
     )
+    PROCESS {
+        if($interface.DriverFileName -ne "vmswitch.sys") {
+            return $interface
+        }
+        $realInterface = Get-NetAdapter | Where-Object {
+            $_.MacAddress -eq $interface.MacAddress -and $_.ifIndex -ne $interface.ifIndex
+        }
 
-    $uri = [System.Uri]$URL
-    return $uri.Host
+        if(!$realInterface){
+            Throw "Failed to find interface attached to VMSwitch"
+        }
+        return $realInterface[0]
+    }
+}
+
+
+function Get-FallbackNetadapter {
+    $name = Get-MainNetadapter
+    $net = Get-NetAdapter -Name $name
+    return $net
+}
+
+
+function Get-OVSDataPort {
+    $dataPort = Get-DataPortFromDataNetwork
+    if ($dataPort){
+        return Get-RealInterface $dataPort
+    }else{
+        $port = Get-FallbackNetadapter
+        $local_ip = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $port.IfIndex -ErrorAction SilentlyContinue
+        if(!$local_ip){
+            Throw "failed to get fallback adapter IP address"
+        }
+        Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $local_ip[0]
+        Set-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex" -Value $port.IfIndex
+    }
+
+    return Get-RealInterface $port
+}
+
+
+function Get-DataPort {
+    $managementOS = Get-JujuCharmConfig -Scope "vmswitch-management"
+    $networkType = Get-JujuCharmConfig -Scope 'network-type'
+
+    if ($networkType -eq "ovs"){
+        Write-JujuInfo "Trying to fetch OVS data port"
+        $dataPort = Get-OVSDataPort
+        return @($dataPort[0], $true)
+    }
+
+    Write-JujuInfo "Trying to fetch data port from config"
+    $nic = Get-InterfaceFromConfig
+    if(!$nic) {
+        $nic = Get-FallbackNetadapter
+        $managementOS = $true
+    }
+    $nic = Get-RealInterface $nic[0]
+    return @($nic, $managementOS)
+}
+
+
+function Start-ConfigureVMSwitch {
+    $VMswitchName = Juju-GetVMSwitch
+    $vmswitch = Get-VMSwitch -SwitchType External -Name $VMswitchName -ErrorAction SilentlyContinue
+
+    if($vmswitch){
+        return $true
+    }
+
+    $dataPort, $managementOS = Get-DataPort
+    $VMswitches = Get-VMSwitch -SwitchType External -ErrorAction SilentlyContinue
+    if ($VMswitches -and $VMswitches.Count -gt 0){
+        foreach($i in $VMswitches){
+            if ($i.NetAdapterInterfaceDescription -eq $dataPort.InterfaceDescription) {
+                Rename-VMSwitch $i -NewName $VMswitchName
+                Set-VMSwitch -Name $VMswitchName -AllowManagementOS $managementOS
+                return $true
+            }
+        }
+    }
+
+    Write-JujuInfo "Adding new vmswitch: $VMswitchName"
+    New-VMSwitch -Name $VMswitchName -NetAdapterName $dataPort.Name -AllowManagementOS $managementOS
+    return $true
 }
 
 
@@ -724,8 +940,7 @@ function Install-Dependency {
 
     $urlChecksum = Get-URLChecksum $URLConfigKey
     if ($urlChecksum['CHECKSUM'] -and $urlChecksum['HASHING_ALGORITHM']) {
-        Install-Package -URL $urlChecksum['URL'] `
-                        -Checksum $urlChecksum['CHECKSUM'] `
+        Install-Package -URL $urlChecksum['URL'] -Checksum $urlChecksum['CHECKSUM'] `
                         -HashingAlgorithm $urlChecksum['HASHING_ALGORITHM'] `
                         -ArgumentList $ArgumentList
     } else {
@@ -741,7 +956,7 @@ function Install-FreeRDPConsole {
 
     $freeRDPZip = Join-Path $FILES_DIR "FreeRDP_powershell.zip"
     $charmLibDir = Join-Path (Get-JujuCharmDir) "lib"
-    Unzip-With7z $freeRDPZip $charmLibDir
+    Expand-ZipArchive $freeRDPZip $charmLibDir
 
     # Copy wfreerdp.exe and DLL file to Windows folder
     $freeRDPFiles = @('wfreerdp.exe', 'libeay32.dll', 'ssleay32.dll')
@@ -761,29 +976,26 @@ function Install-FreeRDPConsole {
 }
 
 
-function Generate-PipConfigFile {
-    $pypiMirror = Get-JujuCharmConfig -scope 'pypi-mirror'
-    if (!$pypiMirror) {
-        $pypiMirror = Get-JujuCharmConfig -scope 'ppy-mirror'
+function Write-PipConfigFile {
+    $pipDir = Join-Path $env:APPDATA "pip"
+    if (Test-Path $pipDir){
+        Remove-Item -Force -Recurse $pipDir
     }
+
+    $pypiMirror = Get-JujuCharmConfig -scope 'pypi-mirror'
     if ($pypiMirror -eq $null -or $pypiMirror.Length -eq 0) {
         Write-JujuLog ("pypi-mirror config is not present. " +
                        "Will not generate the pip.ini file.")
         return
     }
-    $pipDir = Join-Path $env:APPDATA "pip"
-    if (!(Test-Path $pipDir)){
-        mkdir $pipDir
-    } else {
-        Remove-Item -Force "$pipDir\*"
-    }
+    mkdir $pipDir
     $pipIni = Join-Path $pipDir "pip.ini"
     New-Item -ItemType File $pipIni
 
     $mirrors = $pypiMirror.Split()
     $hosts = @()
     foreach ($i in $mirrors){
-        $h = Get-HostFromURL $i
+        $h = ([System.Uri]$i).Host
         if ($h -in $hosts) {
             continue
         }
@@ -807,43 +1019,17 @@ function Get-HypervADUser {
 }
 
 
-function Set-ADRelationParams {
-    $hypervADUser = Get-HypervADUser
-    $userGroup = @{
-        $hypervADUser = @( )
-    }
-    $encUserGroup = Marshall-Object $userGroup
-    $relationParams = @{
-        'adusers' = $encUserGroup;
-    }
-    $ret = Set-JujuRelation -Relation_Settings $relationParams
-    if ($ret -eq $false) {
-       Write-JujuError "Failed to set AD relation parameters."
-    }
-}
-
-
-function Set-CharmStatus {
-    Param(
-        [string]$Status
-    )
-
-    Execute-ExternalCommand {
-        status-set.exe $Status
-    } -ErrorMessage "Failed to set charm status to '$Status'."
-}
-
-
 function Set-DevStackRelationParams {
     Param(
         [HashTable]$RelationParams
     )
 
-    $rids = Get-JujuRelationIds -RelType "devstack"
+    $rids = Get-JujuRelationIds -Relation "devstack"
     foreach ($rid in $rids) {
-        $ret = Set-JujuRelation -Relation_Id $rid -Relation_Settings $RelationParams
-        if ($ret -eq $false) {
-           Write-JujuError "Failed to set DevStack relation parameters."
+        try {
+            Set-JujuRelation -Settings $RelationParams -Relation $rid
+        } catch {
+            Write-JujuError "Failed to set DevStack relation parameters."
         }
     }
 }
@@ -852,164 +1038,155 @@ function Set-DevStackRelationParams {
 # HOOKS FUNCTIONS
 
 function Run-InstallHook {
-    # Disable firewall
-    Execute-ExternalCommand {
-        netsh.exe advfirewall set allprofiles state off
-    } -ErrorMessage "Failed to disable firewall."
+    # Set machine to use high performance settings.
+    try {
+        Set-PowerProfile -PowerProfile Performance
+    } catch {
+        # No need to error out the hook if this fails.
+        Write-JujuWarning "Failed to set power scheme."
+    }
+    Start-TimeResync
 
-    Configure-VMSwitch
-    Generate-PipConfigFile
+    # Disable firewall
+    Start-ExternalCommand { netsh.exe advfirewall set allprofiles state off } -ErrorMessage "Failed to disable firewall."
+
+    Start-ConfigureVMSwitch
+    Write-PipConfigFile
 
     # Install Git
     Install-Dependency 'git-url' @('/SILENT')
-    AddTo-UserPath "${env:ProgramFiles(x86)}\Git\cmd"
-    Renew-PSSessionPath
-
-    # Install 7z
-    Install-Dependency '7z-url' @('/S')
-    AddTo-UserPath "${env:ProgramFiles(x86)}\7-Zip"
-    Renew-PSSessionPath
+    Add-ToUserPath "${env:ProgramFiles(x86)}\Git\cmd"
 
     # Install Python 2.7.x (x86)
     Install-Dependency 'python27-url' @('/qn')
-    AddTo-UserPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
-    Renew-PSSessionPath
+    Add-ToUserPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
 
     # Install FreeRDP Hyper-V console access
-    $enableFreeRDP = Get-JujuCharmConfig -scope 'enable-freerdp-console'
+    $enableFreeRDP = Get-JujuCharmConfig -Scope 'enable-freerdp-console'
     if ($enableFreeRDP -eq $true) {
         Install-FreeRDPConsole
     }
 
-    # Install extra python packages
-    Write-JujuLog "Installing pip dependencies..."
+    Write-JujuLog "Installing pip..."
     $getPip = Download-File -DownloadLink "https://bootstrap.pypa.io/get-pip.py"
-    Execute-ExternalCommand -Command { python $getPip } `
-                            -ErrorMessage "Failed to install pip."
-
-    $version = & pip --version
+    Start-ExternalCommand -ScriptBlock { python $getPip } -ErrorMessage "Failed to install pip."
+    $version = Start-ExternalCommand { pip.exe --version } -ErrorMessage "Failed to get pip version."
     Write-JujuLog "Pip version: $version"
 
-    $pythonPkgs = Get-JujuCharmConfig -scope 'extra-python-packages'
+    Write-JujuLog "Installing pip dependencies..."
+    $pythonPkgs = Get-JujuCharmConfig -Scope 'extra-python-packages'
     if ($pythonPkgs) {
         $pythonPkgsArr = $pythonPkgs.Split()
         foreach ($pythonPkg in $pythonPkgsArr) {
             Write-JujuLog "Installing $pythonPkg..."
-            Execute-ExternalCommand -Command { pip install -U $pythonPkg } `
+            Start-ExternalCommand -ScriptBlock { pip install -U $pythonPkg } `
                                     -ErrorMessage "Failed to install $pythonPkg"
         }
     }
 
-    # Install posix_ipc
     Write-JujuLog "Installing posix_ipc library..."
     $zipPath = Join-Path $FILES_DIR "posix_ipc.zip"
-    Unzip-With7z $zipPath $LIB_DIR
+    Expand-ZipArchive $zipPath $LIB_DIR
 
     Write-JujuLog "Installing pywin32..."
-    Execute-ExternalCommand -Command { pip install pywin32 } `
-                            -ErrorMessage "Failed to install pywin32."
-    Execute-ExternalCommand {
+    Start-ExternalCommand -ScriptBlock { pip install pywin32 } `
+                          -ErrorMessage "Failed to install pywin32."
+    Start-ExternalCommand {
         python "$PYTHON_DIR\Scripts\pywin32_postinstall.py" -install
     } -ErrorMessage "Failed to run pywin32_postinstall.py"
 
     Write-JujuLog "Running Git Prep..."
-    $zuulUrl = Get-JujuCharmConfig -scope 'zuul-url'
-    $zuulRef = Get-JujuCharmConfig -scope 'zuul-ref'
-    $zuulChange = Get-JujuCharmConfig -scope 'zuul-change'
-    $zuulProject = Get-JujuCharmConfig -scope 'zuul-project'
+    $zuulUrl = Get-JujuCharmConfig -Scope 'zuul-url'
+    $zuulRef = Get-JujuCharmConfig -Scope 'zuul-ref'
+    $zuulChange = Get-JujuCharmConfig -Scope 'zuul-change'
+    $zuulProject = Get-JujuCharmConfig -Scope 'zuul-project'
     $gerritSite = $zuulUrl.Trim('/p')
-    Run-GerritGitPrep -ZuulUrl $zuulUrl `
-                      -GerritSite $gerritSite `
-                      -ZuulRef $zuulRef `
-                      -ZuulChange $zuulChange `
-                      -ZuulProject $zuulProject
+    Start-GerritGitPrep -ZuulUrl $zuulUrl -GerritSite $gerritSite -ZuulRef $zuulRef `
+                        -ZuulChange $zuulChange -ZuulProject $zuulProject
 
     $gitEmail = Get-JujuCharmConfig -scope 'git-user-email'
     $gitName = Get-JujuCharmConfig -scope 'git-user-name'
-    Execute-ExternalCommand { git config --global user.email $gitEmail } `
+    Start-ExternalCommand { git config --global user.email $gitEmail } `
         -ErrorMessage "Failed to set git global user.email"
-    Execute-ExternalCommand { git config --global user.name $gitName } `
+    Start-ExternalCommand { git config --global user.name $gitName } `
         -ErrorMessage "Failed to set git global user.name"
     $zuulBranch = Get-JujuCharmConfig -scope 'zuul-branch'
 
-    Write-JujuLog "Creating the Environment..."
-    Create-Environment -BranchName $zuulBranch `
-                       -BuildFor $zuulProject
+    Write-JujuLog "Initializing the environment..."
+    Initialize-Environment -BranchName $zuulBranch -BuildFor $zuulProject
 }
 
 
 function Run-ADRelationJoinedHook {
-    Set-ADRelationParams
+    $hypervADUser = Get-HypervADUser
+    $userGroup = @{$hypervADUser = @()}
+    $encUserGroup = Get-MarshaledObject $userGroup
+    $relationParams = @{'adusers' = $encUserGroup}
+
+    $rids = Get-JujuRelationIds -Relation "ad-join"
+    foreach ($rid in $rids) {
+        try {
+            Set-JujuRelation -Settings $relationParams -Relation $rid
+        } catch {
+            Write-JujuError "Failed to set AD relation parameters."
+        }
+    }
 }
 
 
 function Run-RelationHooks {
-    Renew-PSSessionPath
-    $adCtx = Get-ADContext
+    $charmServices = Get-CharmServices
+    $networkType = Get-JujuCharmConfig -Scope 'network-type'
+    if ($networkType -eq "hyperv") {
+        $charmServices.Remove('neutron-ovs')
+    } elseif ($networkType -eq "ovs") {
+        $charmServices.Remove('neutron')
+    } else {
+        Throw "ERROR: Unknown network type: '$networkType'."
+    }
 
-    if (!$adCtx["context"]) {
+    $adCtx = Get-ActiveDirectoryContext
+    if (!$adCtx) {
         Write-JujuLog "AD context is not ready."
     } else {
-        if (!(Is-InDomain $adCtx["ad_domain"])) {
-            ConnectTo-ADController $adCtx
-            ExitFrom-JujuHook -WithReboot
-        } else {
-            Write-JujuLog "AD domain already joined."
-        }
-
-        $adUserCreds = Unmarshall-Object $adCtx["ad_credentials"]
-        $adUser = $adUserCreds.PSObject.Properties.Name
-        $adUserPassword = $adUserCreds.PSObject.Properties.Value
-        $domainUser = $adCtx["ad_domain"] + "\" + $adUser
+        Start-JoinDomain
 
         $adUserCred = @{
-            'domain'   = $adCtx["ad_domain"];
-            'username' = $adUser;
-            'password' = $adUserPassword
+            'domain'   = $adCtx["domainName"];
+            'username' = $adCtx["username"];
+            'password' = $adCtx["password"]
         }
-        $encADUserCred = Marshall-Object $adUserCred
-        $relationParams = @{ 'ad_credentials' = $encADUserCred; }
+        $relationParams = @{'ad_credentials' = (Get-MarshaledObject $adUserCred);}
         Set-DevStackRelationParams $relationParams
 
         # Add AD user to local Administrators group
-        Add-UserToLocalAdminsGroup $adCtx["ad_domain"] $adUser
+        Grant-PrivilegesOnDomainUser $adCtx["username"]
 
-        Create-OpenStackService $NOVA_SERVICE_NAME $NOVA_SERVICE_DESCRIPTION `
-                      $NOVA_SERVICE_EXECUTABLE $NOVA_SERVICE_CONFIG `
-                      $domainUser $adUserPassword
-        Create-OpenStackService $NEUTRON_SERVICE_NAME $NEUTRON_SERVICE_DESCRIPTION `
-                      $NEUTRON_SERVICE_EXECUTABLE $NEUTRON_SERVICE_CONFIG `
-                      $domainUser $adUserPassword
+        foreach($key in $charmServices.Keys) {
+            New-OpenStackService $charmServices[$key]['service_name'] $charmServices[$key]['description'] `
+                                 $charmServices[$key]['binary'] $charmServices[$key]['config'] `
+                                 $adCtx["username"] $adCtx["password"]
+            Write-ConfigFile charmServices[$key]
+        }
     }
 
     $devstackCtx = Get-DevStackContext
-    if (!$devstackCtx['context']) {
-        Write-JujuLog ("DevStack context is not ready. Will not generate config files.")
-    } else {
-        Generate-ConfigFiles -DevStackIP $devstackCtx['devstack_ip'] `
-                             -DevStackPassword $devstackCtx['devstack_password'] `
-                             -RabbitUser $devstackCtx['rabbit_user']
-    }
-
-    if (!$devstackCtx['context'] -or !$adCtx['context']) {
-        Write-JujuLog ("AD context and DevStack context must be complete " +
+    if (!$devstackCtx -or !$adCtx) {
+        Write-JujuLog ("Both AD context and DevStack context must be complete " +
                        "before starting the OpenStack services.")
     } else {
         Write-JujuLog "Starting OpenStack services..."
-
-        Write-JujuLog "Starting $NOVA_SERVICE_NAME service"
-        Start-Service -ServiceName $NOVA_SERVICE_NAME
-        Write-JujuLog "Polling $NOVA_SERVICE_NAME service status for 60 seconds."
-        Poll-ServiceStatus $NOVA_SERVICE_NAME -IntervalSeconds 60
-
-        Write-JujuLog "Starting $NEUTRON_SERVICE_NAME service"
-        Start-Service -ServiceName $NEUTRON_SERVICE_NAME
-        Write-JujuLog "Polling $NEUTRON_SERVICE_NAME service status for 60 seconds."
-        Poll-ServiceStatus $NEUTRON_SERVICE_NAME -IntervalSeconds 60
+        $pollingInterval = 60
+        foreach($key in $charmServices.Keys) {
+            $serviceName = $charmServices[$key]['service_name']
+            Write-JujuLog "Starting $serviceName service"
+            Start-Service -ServiceName $serviceName
+            Write-JujuLog "Polling $serviceName service status for $pollingInterval seconds."
+            Watch-ServiceStatus $serviceName -IntervalSeconds $pollingInterval
+        }
 
         Start-Service "MSiSCSI"
-
-        Set-CharmStatus "active"
+        Set-JujuStatus -Status active -Message "Unit is ready"
     }
 }
 

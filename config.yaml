@@ -83,7 +83,7 @@ options:
         * ovs
   git-url:
     type: string
-    default: "https://github.com/msysgit/msysgit/releases/download/Git-1.9.5-preview20150319/Git-1.9.5-preview20150319.exe"
+    default: "https://github.com/git-for-windows/git/releases/download/v2.7.2.windows.1/Git-2.7.2-32-bit.exe"
     description: |
       URL used to download git for Windows. Optionally, a checksum supported
       by the 'Get-FileHash' PowerShell cmdlet can be provided to check file

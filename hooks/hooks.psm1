@@ -210,6 +210,41 @@ function Get-URLChecksum {
 }
 
 
+function Start-DownloadFile {
+    Param(
+        [Parameter(Mandatory=$True)]
+        [System.Uri]$Uri,
+        [string]$OutFile,
+        [switch]$SkipIntegrityCheck=$false
+    )
+
+    if(!$OutFile) {
+        $OutFile = $Uri.PathAndQuery.Substring($Uri.PathAndQuery.LastIndexOf("/") + 1)
+        if(!$OutFile) {
+            throw "The ""OutFile"" parameter needs to be specified"
+        }
+    }
+
+    $webClient = New-Object System.Net.WebClient
+    Start-ExecuteWithRetry { $webClient.DownloadFile($Uri, $OutFile) }
+
+    if(!$SkipIntegrityCheck) {
+        $fragment = $Uri.Fragment.Trim('#')
+        if (!$fragment){
+            return
+        }
+        $details = $fragment.Split("=")
+        $algorithm = $details[0]
+        $hash = $details[1]
+        if($algorithm -in @("SHA1", "SHA256", "SHA384", "SHA512", "MACTripleDES", "MD5", "RIPEMD160")){
+            Test-FileIntegrity -File $OutFile -Algorithm $algorithm -ExpectedHash $hash
+        } else {
+            Throw "Hash algorithm $algorithm not recognized."
+        }
+    }
+}
+
+
 # Returns the full path of the package after it is downloaded using
 # the URL parameter (a checksum may optionally be specified). The
 # package is cached on the disk until the installation successfully finishes.
@@ -217,6 +252,7 @@ function Get-URLChecksum {
 # package path if checksum is given and it matches.
 function Get-PackagePath {
     Param(
+        [Parameter(Mandatory=$True)]
         [string]$URL,
         [string]$Checksum="",
         [string]$HashingAlgorithm=""
@@ -231,7 +267,12 @@ function Get-PackagePath {
         }
         Remove-Item -Recurse -Force -Path $packagePath
     }
-    Invoke-FastWebRequest -Uri "$URL#$HashingAlgorithm=$Checksum" -OutFile $packagePath
+
+    if ($Checksum -and $HashingAlgorithm) {
+        Start-DownloadFile -Uri "$URL#$HashingAlgorithm=$Checksum" -OutFile $packagePath
+    } else {
+        Start-DownloadFile -Uri $URL -OutFile $packagePath -SkipIntegrityCheck
+    }
 
     return $packagePath
 }
@@ -250,7 +291,7 @@ function Install-Package {
         [array]$ArgumentList
     )
 
-    Write-JujuLog "Installing package $URL..."
+    Write-JujuLog "Installing package '$URL'"
 
     $packageFormat = $URL.Split('.')[-1]
     $acceptedFormats = @('msi', 'exe')
@@ -453,7 +494,7 @@ function Start-GerritGitPrep {
 
 
 function Install-Nova {
-    Write-JujuLog "Installing nova..."
+    Write-JujuLog "Installing nova"
 
     $openstackBuild = Join-Path $BUILD_DIR "openstack"
     Start-ExecuteWithRetry {
@@ -464,7 +505,7 @@ function Install-Nova {
         Throw "$novaBin was not found."
     }
 
-    Write-JujuLog "Copying default config files..."
+    Write-JujuLog "Copying default config files"
     $defaultConfigFiles = @('rootwrap.d', 'api-paste.ini', 'cells.json',
                             'policy.json','rootwrap.conf')
     foreach ($config in $defaultConfigFiles) {
@@ -475,7 +516,7 @@ function Install-Nova {
 
 
 function Install-Neutron {
-    Write-JujuLog "Installing neutron..."
+    Write-JujuLog "Installing neutron"
 
     $openstackBuild = Join-Path $BUILD_DIR "openstack"
     Start-ExecuteWithRetry {
@@ -489,7 +530,7 @@ function Install-Neutron {
 
 
 function Install-NetworkingHyperV {
-    Write-JujuLog "Installing networking-hyperv..."
+    Write-JujuLog "Installing networking-hyperv"
 
     $openstackBuild = Join-Path $BUILD_DIR "openstack"
     Start-ExecuteWithRetry {
@@ -595,33 +636,33 @@ function Initialize-GitRepositories {
     Param(
         [ValidateSet("hyperv", "ovs")]
         [string]$NetworkType,
-        [string]$BranchName
+        [string]$BranchName,
         [ValidateSet("openstack/nova", "openstack/neutron", "stackforge/networking-hyperv")]
-        [string]$BuildFor,
+        [string]$BuildFor
     )
 
-    Write-JujuLog "Cloning the required Git repositories..."
+    Write-JujuLog "Cloning the required Git repositories"
 
     $openstackBuild = Join-Path $BUILD_DIR "openstack"
     if ($NetworkType -eq 'hyperv') {
         if ($BuildFor -eq "stackforge/networking-hyperv") {
-            Write-JujuLog "Cloning $NOVA_GIT from $BranchName..."
+            Write-JujuLog "Cloning $NOVA_GIT from $BranchName"
             Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\nova" $NOVA_GIT $BranchName }
-            Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName..."
+            Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName"
             Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\neutron" $NEUTRON_GIT $BranchName }
         } else {
-            Write-JujuLog "Cloning $NETWORKING_HYPERV_GIT from master..."
+            Write-JujuLog "Cloning $NETWORKING_HYPERV_GIT from master"
             Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\networking-hyperv" $NETWORKING_HYPERV_GIT "master" }
         }
     }
 
     if ($BuildFor -eq "openstack/nova") {
-        Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName..."
+        Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName"
         Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\neutron" $NEUTRON_GIT $BranchName }
     }
 
     if (($BuildFor -eq "openstack/neutron") -or ($BuildFor -eq "openstack/quantum")) {
-        Write-JujuLog "Cloning $NOVA_GIT from $BranchName..."
+        Write-JujuLog "Cloning $NOVA_GIT from $BranchName"
         Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\nova" $NOVA_GIT $BranchName }
     }
 }
@@ -644,7 +685,7 @@ function Initialize-Environment {
     $mkisofsPath = Join-Path $BIN_DIR "mkisofs.exe"
     $qemuimgPath = Join-Path $BIN_DIR "qemu-img.exe"
     if (!(Test-Path $mkisofsPath) -or !(Test-Path $qemuimgPath)) {
-        Write-JujuLog "Downloading OpenStack binaries..."
+        Write-JujuLog "Downloading OpenStack binaries"
         $zipPath = Join-Path $FILES_DIR "openstack_bin.zip"
         Expand-ZipArchive $zipPath $BIN_DIR
     }
@@ -907,7 +948,7 @@ function Get-DataPort {
 
 
 function Start-ConfigureVMSwitch {
-    $VMswitchName = Juju-GetVMSwitch
+    $VMswitchName = Get-JujuVMSwitchName
     $vmswitch = Get-VMSwitch -SwitchType External -Name $VMswitchName -ErrorAction SilentlyContinue
 
     if($vmswitch){
@@ -950,7 +991,7 @@ function Install-Dependency {
 
 
 function Install-FreeRDPConsole {
-    Write-JujuLog "Installing FreeRDP..."
+    Write-JujuLog "Installing FreeRDP"
 
     Install-Dependency 'vc-2012-url' @('/q')
 
@@ -1067,35 +1108,37 @@ function Run-InstallHook {
         Install-FreeRDPConsole
     }
 
-    Write-JujuLog "Installing pip..."
-    $getPip = Download-File -DownloadLink "https://bootstrap.pypa.io/get-pip.py"
-    Start-ExternalCommand -ScriptBlock { python $getPip } -ErrorMessage "Failed to install pip."
+    Write-JujuLog "Installing pip"
+    $tmpPath = Join-Path $env:TEMP "get-pip.py"
+    Start-DownloadFile -Uri "https://bootstrap.pypa.io/get-pip.py" -SkipIntegrityCheck -OutFile $tmpPath
+    Start-ExternalCommand -ScriptBlock { python $tmpPath } -ErrorMessage "Failed to install pip."
+    Remove-Item $tmpPath
     $version = Start-ExternalCommand { pip.exe --version } -ErrorMessage "Failed to get pip version."
     Write-JujuLog "Pip version: $version"
 
-    Write-JujuLog "Installing pip dependencies..."
+    Write-JujuLog "Installing pip dependencies"
     $pythonPkgs = Get-JujuCharmConfig -Scope 'extra-python-packages'
     if ($pythonPkgs) {
         $pythonPkgsArr = $pythonPkgs.Split()
         foreach ($pythonPkg in $pythonPkgsArr) {
-            Write-JujuLog "Installing $pythonPkg..."
+            Write-JujuLog "Installing $pythonPkg"
             Start-ExternalCommand -ScriptBlock { pip install -U $pythonPkg } `
                                     -ErrorMessage "Failed to install $pythonPkg"
         }
     }
 
-    Write-JujuLog "Installing posix_ipc library..."
+    Write-JujuLog "Installing posix_ipc library"
     $zipPath = Join-Path $FILES_DIR "posix_ipc.zip"
     Expand-ZipArchive $zipPath $LIB_DIR
 
-    Write-JujuLog "Installing pywin32..."
+    Write-JujuLog "Installing pywin32"
     Start-ExternalCommand -ScriptBlock { pip install pywin32 } `
                           -ErrorMessage "Failed to install pywin32."
     Start-ExternalCommand {
         python "$PYTHON_DIR\Scripts\pywin32_postinstall.py" -install
     } -ErrorMessage "Failed to run pywin32_postinstall.py"
 
-    Write-JujuLog "Running Git Prep..."
+    Write-JujuLog "Running Git Prep"
     $zuulUrl = Get-JujuCharmConfig -Scope 'zuul-url'
     $zuulRef = Get-JujuCharmConfig -Scope 'zuul-ref'
     $zuulChange = Get-JujuCharmConfig -Scope 'zuul-change'
@@ -1112,7 +1155,7 @@ function Run-InstallHook {
         -ErrorMessage "Failed to set git global user.name"
     $zuulBranch = Get-JujuCharmConfig -scope 'zuul-branch'
 
-    Write-JujuLog "Initializing the environment..."
+    Write-JujuLog "Initializing the environment"
     Initialize-Environment -BranchName $zuulBranch -BuildFor $zuulProject
 }
 
@@ -1175,7 +1218,7 @@ function Run-RelationHooks {
         Write-JujuLog ("Both AD context and DevStack context must be complete " +
                        "before starting the OpenStack services.")
     } else {
-        Write-JujuLog "Starting OpenStack services..."
+        Write-JujuLog "Starting OpenStack services"
         $pollingInterval = 60
         foreach($key in $charmServices.Keys) {
             $serviceName = $charmServices[$key]['service_name']

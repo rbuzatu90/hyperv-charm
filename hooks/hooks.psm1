@@ -124,6 +124,7 @@ function Get-CharmServices {
             );
         }
     }
+    return $services
 }
 
 

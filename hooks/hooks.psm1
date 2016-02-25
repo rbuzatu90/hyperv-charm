@@ -523,10 +523,6 @@ function Install-Neutron {
     Start-ExecuteWithRetry {
         Install-OpenStackProjectFromRepo "$openstackBuild\neutron"
     }
-    $neutronBin = (Get-CharmServices)['neutron']['binary']
-    if (!(Test-Path $neutronBin)) {
-        Throw "$neutronBin was not found."
-    }
 }
 
 
@@ -536,6 +532,10 @@ function Install-NetworkingHyperV {
     $openstackBuild = Join-Path $BUILD_DIR "openstack"
     Start-ExecuteWithRetry {
         Install-OpenStackProjectFromRepo "$openstackBuild\networking-hyperv"
+    }
+    $neutronBin = (Get-CharmServices)['neutron']['binary']
+    if (!(Test-Path $neutronBin)) {
+        Throw "$neutronBin was not found."
     }
 }
 

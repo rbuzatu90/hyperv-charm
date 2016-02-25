@@ -321,7 +321,7 @@ function Start-GitClonePull {
 
     if (!(Test-Path -Path $Path)) {
         Start-ExecuteWithRetry {
-            Start-ExternalCommand -ScriptBlock { git clone $URL $Path } 
+            Start-ExternalCommand -ScriptBlock { git clone $URL $Path } `
                                   -ErrorMessage "Git clone failed"
         }
         Start-ExternalCommand -ScriptBlock { git checkout $Branch } `

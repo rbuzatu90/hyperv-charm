@@ -1079,7 +1079,7 @@ function Set-DevStackRelationParams {
     $rids = Get-JujuRelationIds -Relation "devstack"
     foreach ($rid in $rids) {
         try {
-            Set-JujuRelation -Settings $RelationParams -Relation $rid
+            Set-JujuRelation -Settings $RelationParams -RelationId $rid
         } catch {
             Write-JujuError "Failed to set DevStack relation parameters."
         }
@@ -1194,7 +1194,7 @@ function Run-ADRelationJoinedHook {
     $rids = Get-JujuRelationIds -Relation "ad-join"
     foreach ($rid in $rids) {
         try {
-            Set-JujuRelation -Settings $relationParams -Relation $rid
+            Set-JujuRelation -Settings $relationParams -RelationId $rid
         } catch {
             Write-JujuError "Failed to set AD relation parameters."
         }
@@ -1214,7 +1214,7 @@ function Run-RelationHooks {
     }
 
     $adCtx = Get-ActiveDirectoryContext
-    if (!$adCtx) {
+    if (!$adCtx.Count) {
         Write-JujuLog "AD context is not ready."
     } else {
         Start-JoinDomain
@@ -1239,7 +1239,7 @@ function Run-RelationHooks {
     }
 
     $devstackCtx = Get-DevStackContext
-    if (!$devstackCtx -or !$adCtx) {
+    if (!$devstackCtx.Count -or !$adCtx.Count) {
         Write-JujuLog ("Both AD context and DevStack context must be complete " +
                        "before starting the OpenStack services.")
     } else {

@@ -419,7 +419,7 @@ function Get-MarshaledObject {
         $Object
     )
     PROCESS {
-        $encoded = $Object | ConvertTo-Yaml
+        $encoded = $Object | ConvertTo-Json
         $b64 = ConvertTo-Base64 $encoded
         return $b64
     }
@@ -440,7 +440,7 @@ function Get-UnmarshaledObject {
     )
     PROCESS {
         $decode = ConvertFrom-Base64 $Object
-        $ret = $decode | ConvertFrom-Yaml
+        $ret = $decode | ConvertFrom-Json
         return $ret
     }
 }

@@ -1,16 +1,14 @@
+#
+# Copyright 2014-2015 Cloudbase Solutions Srl
+#
+
 $ErrorActionPreference = 'Stop'
+Import-Module JujuLogging
 
 try {
-    $modulePath = Join-Path $PSScriptRoot "hooks.psm1"
-    Import-Module -Force -DisableNameChecking $modulePath
+    Import-Module HyperVCIHooks
+    Start-ADRelationJoinedHook
 } catch {
-    juju-log.exe "ERROR while loading charm module: $_"
-    exit 1
-}
-
-try {
-    Run-ADRelationJoinedHook
-} catch {
-    juju-log.exe "ERROR while running ad-join-relation-joined hook: $_"
+    Write-HookTracebackToLog $_
     exit 1
 }

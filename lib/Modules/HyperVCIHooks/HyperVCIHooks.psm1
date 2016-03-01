@@ -1,16 +1,15 @@
+#
+# Copyright 2015-2016 Cloudbase Solutions Srl
+#
+
 $ErrorActionPreference = 'Stop'
 
-try {
-    Import-Module JujuUtils
-    Import-Module JujuHooks
-    Import-Module JujuLogging
-    Import-Module JujuHelper
-    Import-Module JujuWindowsUtils
-    Import-Module ADCharmUtils
-} catch {
-    juju-log.exe "ERROR while loading PowerShell charm helpers: $_"
-    exit 1
-}
+Import-Module JujuUtils
+Import-Module JujuHooks
+Import-Module JujuLogging
+Import-Module JujuHelper
+Import-Module JujuWindowsUtils
+Import-Module ADCharmUtils
 
 $NEUTRON_GIT           = "https://github.com/openstack/neutron.git"
 $NOVA_GIT              = "https://github.com/openstack/nova.git"
@@ -1096,10 +1095,9 @@ function Import-CloudbaseCert {
 }
 
 
-
 # HOOKS FUNCTIONS
 
-function Run-InstallHook {
+function Start-InstallHook {
     # Set machine to use high performance settings.
     try {
         Set-PowerProfile -PowerProfile Performance
@@ -1185,7 +1183,7 @@ function Run-InstallHook {
 }
 
 
-function Run-ADRelationJoinedHook {
+function Start-ADRelationJoinedHook {
     $hypervADUser = Get-HypervADUser
     $userGroup = @{$hypervADUser = @()}
     $encUserGroup = Get-MarshaledObject $userGroup
@@ -1202,7 +1200,7 @@ function Run-ADRelationJoinedHook {
 }
 
 
-function Run-RelationHooks {
+function Start-RelationHooks {
     $charmServices = Get-CharmServices
     $networkType = Get-JujuCharmConfig -Scope 'network-type'
     if ($networkType -eq "hyperv") {
@@ -1257,8 +1255,3 @@ function Run-RelationHooks {
         Set-JujuStatus -Status active -Message "Unit is ready"
     }
 }
-
-
-Export-ModuleMember -Function Run-InstallHook
-Export-ModuleMember -Function Run-ADRelationJoinedHook
-Export-ModuleMember -Function Run-RelationHooks

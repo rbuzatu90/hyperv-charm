@@ -37,9 +37,9 @@ function Get-TemplatesDir {
 
 function Get-DevStackContext {
     $requiredCtx =  @{
-        "devstack_ip"       = "devstack_ip";
-        "devstack_password" = "password";
-        "rabbit_user"       = "rabbit_user";
+        "devstack_ip" = $null;
+        "password"    = $null;
+        "rabbit_user" = $null;
     }
     $ctx = Get-JujuRelationContext -Relation 'devstack' -RequiredContext $requiredCtx
 

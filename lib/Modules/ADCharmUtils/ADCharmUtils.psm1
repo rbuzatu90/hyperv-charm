@@ -94,11 +94,11 @@ function Get-ActiveDirectoryContext {
             "address" = $null;
             "domainName" = $null;
             "netbiosname" = $null;
+            "adcredentials" = $null;
         }
 
         $optionalContext = @{
             $blobKey = $null;
-            "adcredentials" = $null;
         }
         $ctx = Get-JujuRelationContext -Relation "ad-join" -RequiredContext $requiredCtx -OptionalContext $optionalContext
 

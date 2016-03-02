@@ -81,7 +81,7 @@ function Grant-Privilege {
         }
     }
     PROCESS {
-        #Write-JujuInfo "Running: $privBin -g $User -v $Grant"
+        # Write-JujuInfo "Running: $privBin -g $User -v $Grant"
         $cmd = @($privBin, "-g", "$User", "-v", $Grant)
         Invoke-JujuCommand -Command $cmd | Out-Null
     }

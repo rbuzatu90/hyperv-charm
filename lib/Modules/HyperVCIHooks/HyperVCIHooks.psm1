@@ -25,7 +25,6 @@ $CONFIG_DIR     = Join-Path $OPENSTACK_DIR "etc"
 $LOG_DIR        = Join-Path $OPENSTACK_DIR "log"
 $SERVICE_DIR    = Join-Path $OPENSTACK_DIR "service"
 $FILES_DIR      = Join-Path ${env:CHARM_DIR} "files"
-$NOVA_DIR       = "${env:ProgramFiles}\Cloudbase Solutions\OpenStack\Nova"
 $OVS_DIR        = "${env:ProgramFiles}\Cloudbase Solutions\Open vSwitch"
 $OVS_VSCTL      = Join-Path $OVS_DIR "bin\ovs-vsctl.exe"
 $env:OVS_RUNDIR = Join-Path $env:ProgramData "openvswitch"
@@ -62,8 +61,9 @@ function Get-SystemContext {
         "log_directory"       = $LOG_DIR;
         "qemu_img_exe"        = Join-Path $BIN_DIR "qemu-img.exe";
         "vswitch_name"        = Get-JujuVMSwitchName
-        "install_dir"         = $NOVA_DIR;
         "local_ip"            = (Get-JujuUnit 'private-address');
+        "etc_directory"       = $CONFIG_DIR;
+        "bin_directory"       = $BIN_DIR;
     }
     return $systemCtxt
 }
@@ -108,7 +108,7 @@ function Get-CharmServices {
         'neutron-ovs' = @{
             'description' = "OpenStack Neutron Open vSwitch Agent Service";
             'binary' = (Join-Path $PYTHON_DIR "Scripts\neutron-openvswitch-agent.exe");
-            'config' = (Join-Path $NOVA_DIR "etc\ml2_conf.ini");
+            'config' = (Join-Path $CONFIG_DIR "ml2_conf.ini");
             'template' = Join-Path (Get-TemplatesDir) "ml2_conf.ini";
             'service_name' = "neutron-openvswitch-agent";
             "context_generators" = @(
@@ -168,6 +168,54 @@ function Write-ConfigFile {
     Set-Content $service["config"] $config
     # Restart-Service $service["service"]
     return $should_restart
+}
+
+
+function Set-IncompleteStatusContext {
+    Param(
+        [array]$ContextSet=@(),
+        [array]$Incomplete=@()
+    )
+    $status = Get-JujuStatus -Full
+    $currentIncomplete = @()
+    if($status["message"]){
+        $msg = $status["message"].Split(":")
+        if($msg.Count -ne 2){
+            return
+        }
+        if($msg[0] -eq "Incomplete contexts") {
+            $currentIncomplete = $msg[1].Split(", ")
+        }
+    }
+    $newIncomplete = [System.Collections.Generic.List[object]](New-Object "System.Collections.Generic.List[object]")
+    if(!$Incomplete){
+        foreach($i in $currentIncomplete) {
+            if ($i -in $ContextSet){
+                continue
+            }
+            $newIncomplete.Add($i)
+        }
+    } else {
+        foreach($i in $currentIncomplete) {
+            if($i -in $ContextSet -and !($i -in $Incomplete)){
+                continue
+            } else {
+                $newIncomplete.Add($i)
+            }
+        }
+        foreach($i in $Incomplete) {
+            if ($i -in $newIncomplete) {
+                continue
+            }
+            $newIncomplete.Add($i)
+        }
+    }
+    if($newIncomplete){
+        $msg = "Incomplete contexts: {0}" -f ($newIncomplete -Join ", ")
+        Set-JujuStatus -Status blocked -Message $msg
+    } else {
+        Set-JujuStatus -Status waiting -Message "Contexts are complete"
+    }
 }
 
 
@@ -735,7 +783,7 @@ function Set-ServiceAcountCredentials {
     }
 
     Grant-Privilege $ServiceUser "SeServiceLogonRight"
-    Set-ServiceLogon @($ServiceName) $ServiceUser $ServicePassword
+    Set-ServiceLogon -Services @($ServiceName) -UserName $ServiceUser -Password $ServicePassword
 }
 
 
@@ -1185,9 +1233,12 @@ function Start-InstallHook {
 
 function Start-ADRelationJoinedHook {
     $hypervADUser = Get-HypervADUser
-    $userGroup = @{$hypervADUser = @()}
+    $userGroup = @{$hypervADUser = @("CN=Users")}
     $encUserGroup = Get-MarshaledObject $userGroup
-    $relationParams = @{'adusers' = $encUserGroup}
+    $relationParams = @{
+        'computername' = [System.Net.Dns]::GetHostName();
+        'adusers' = $encUserGroup
+    }
 
     $rids = Get-JujuRelationIds -Relation "ad-join"
     foreach ($rid in $rids) {
@@ -1219,20 +1270,21 @@ function Start-RelationHooks {
 
         $adUserCred = @{
             'domain'   = $adCtx["domainName"];
-            'username' = $adCtx["username"];
-            'password' = $adCtx["password"]
+            'username' = $adCtx['adcredentials'][0]['username'];
+            'password' = $adCtx['adcredentials'][0]['password']
         }
         $relationParams = @{'ad_credentials' = (Get-MarshaledObject $adUserCred);}
         Set-DevStackRelationParams $relationParams
 
         # Add AD user to local Administrators group
-        Grant-PrivilegesOnDomainUser $adCtx["username"]
+        Grant-PrivilegesOnDomainUser $adCtx['adcredentials'][0]['username']
 
         foreach($key in $charmServices.Keys) {
             New-OpenStackService $charmServices[$key]['service_name'] $charmServices[$key]['description'] `
                                  $charmServices[$key]['binary'] $charmServices[$key]['config'] `
-                                 $adCtx["username"] $adCtx["password"]
-            Write-ConfigFile charmServices[$key]
+                                 $adCtx['adcredentials'][0]['username'] `
+                                 $adCtx['adcredentials'][0]['password']
+            Write-ConfigFile $key
         }
     }
 

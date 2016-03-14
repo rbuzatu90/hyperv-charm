@@ -19,6 +19,15 @@ options:
     type: string
     default: ""
     description: "Zuul change."
+  cherry-picks:
+    type: string
+    description: |
+      A comma seperated list of items with git info used to apply cherry picks.
+      Each item has the following syntax: <project_name>|<git_url>|<branch_name>|<commit_id>
+      Valid project names are:
+        - nova
+        - networking-hyperv
+        - neutron
   pypi-mirror:
     type: string
     default: ""

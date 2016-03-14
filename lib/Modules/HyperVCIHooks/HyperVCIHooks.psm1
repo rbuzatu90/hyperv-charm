@@ -690,38 +690,86 @@ function Ensure-InternalOVSInterfaces {
 }
 
 
+function Get-CherryPicksObject {
+    $cfgOption = Get-JujuCharmConfig -Scope 'cherry-picks'
+    if (!$cfgOption) {
+        return @{}
+    }
+    $ret = @{
+        'nova' = @();
+        'networking-hyperv' = @();
+        'neutron' = @()
+    }
+    $splitCfgOption = $cfgOption.Split(',')
+    $validProjects = @('nova', 'networking-hyperv', 'neutron')
+    foreach ($item in $splitCfgOption) {
+        $splitItem = $item.Split('|')
+        if ($splitItem.Count -ne 4) {
+            Throw "ERROR: Wrong 'cherry-picks' config option format"
+        }
+        $projectName = $splitItem[0]
+        if ($projectName -notin $validProjects) {
+            Throw "ERROR: Invalid git project name '$projectName'"
+        }
+        $ret[$projectName] += @{
+            'git_url' = $splitItem[1];
+            'branch_name' = $splitItem[2];
+            'commit_id' = $splitItem[3]
+        }
+    }
+    return $ret
+}
+
+
+function Initialize-GitRepository {
+    Param(
+        [string]$BuildFolder,
+        [string]$GitURL,
+        [string]$BranchName,
+        [array]$CherryPicks=@()
+    )
+
+    Write-JujuLog "Cloning $GitURL from $BranchName"
+    Start-ExecuteWithRetry { Start-GitClonePull $BuildFolder $GitURL $BranchName }
+    foreach ($commit in $CherryPicks) {
+        Write-JujuLog ("Cherry-picking commit {0} from {1}, branch {2}" -f
+                       @($commit['commit_id'], $commit['git_url'], $commit['branch_name']))
+        pushd $BuildFolder
+        Start-ExternalCommand { git fetch $commit['git_url'] $commit['branch_name'] }
+        Start-ExternalCommand { git cherry-pick $commit['commit_id'] }
+        popd
+    }
+}
+
+
 function Initialize-GitRepositories {
     Param(
         [ValidateSet("hyperv", "ovs")]
         [string]$NetworkType,
         [string]$BranchName,
-        [ValidateSet("openstack/nova", "openstack/neutron", "stackforge/networking-hyperv")]
+        [ValidateSet("openstack/nova", "openstack/neutron", "stackforge/networking-hyperv", "openstack/quantum")]
         [string]$BuildFor
     )
 
     Write-JujuLog "Cloning the required Git repositories"
 
+    $cherryPicks = Get-CherryPicksObject
     $openstackBuild = Join-Path $BUILD_DIR "openstack"
     if ($NetworkType -eq 'hyperv') {
         if ($BuildFor -eq "stackforge/networking-hyperv") {
-            Write-JujuLog "Cloning $NOVA_GIT from $BranchName"
-            Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\nova" $NOVA_GIT $BranchName }
-            Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName"
-            Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\neutron" $NEUTRON_GIT $BranchName }
+            Initialize-GitRepository "$openstackBuild\nova" $NOVA_GIT $BranchName $cherryPicks['nova']
+            Initialize-GitRepository "$openstackBuild\neutron" $NEUTRON_GIT $BranchName $cherryPicks['neutron']
         } else {
-            Write-JujuLog "Cloning $NETWORKING_HYPERV_GIT from master"
-            Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\networking-hyperv" $NETWORKING_HYPERV_GIT "master" }
+            Initialize-GitRepository "$openstackBuild\networking-hyperv" $NETWORKING_HYPERV_GIT "master" $cherryPicks['networking-hyperv']
         }
     }
 
     if ($BuildFor -eq "openstack/nova") {
-        Write-JujuLog "Cloning neutron from $NEUTRON_GIT $BranchName"
-        Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\neutron" $NEUTRON_GIT $BranchName }
+        Initialize-GitRepository "$openstackBuild\neutron" $NEUTRON_GIT $BranchName $cherryPicks['neutron']
     }
 
     if (($BuildFor -eq "openstack/neutron") -or ($BuildFor -eq "openstack/quantum")) {
-        Write-JujuLog "Cloning $NOVA_GIT from $BranchName"
-        Start-ExecuteWithRetry { Start-GitClonePull "$openstackBuild\nova" $NOVA_GIT $BranchName }
+        Initialize-GitRepository "$openstackBuild\nova" $NOVA_GIT $BranchName $cherryPicks['nova']
     }
 }
 
@@ -743,7 +791,7 @@ function Initialize-Environment {
     $mkisofsPath = Join-Path $BIN_DIR "mkisofs.exe"
     $qemuimgPath = Join-Path $BIN_DIR "qemu-img.exe"
     if (!(Test-Path $mkisofsPath) -or !(Test-Path $qemuimgPath)) {
-        Write-JujuLog "Downloading OpenStack binaries"
+        Write-JujuLog "Extracting OpenStack binaries"
         $zipPath = Join-Path $FILES_DIR "openstack_bin.zip"
         Expand-ZipArchive $zipPath $BIN_DIR
     }

@@ -61,7 +61,7 @@ function Get-SystemContext {
         "log_directory"       = $LOG_DIR;
         "qemu_img_exe"        = Join-Path $BIN_DIR "qemu-img.exe";
         "vswitch_name"        = Get-JujuVMSwitchName
-        "local_ip"            = (Get-JujuUnit 'private-address');
+        "local_ip"            = (Get-CharmState -Namespace "novahyperv" -Key "local_ip");
         "etc_directory"       = $CONFIG_DIR;
         "bin_directory"       = $BIN_DIR;
     }

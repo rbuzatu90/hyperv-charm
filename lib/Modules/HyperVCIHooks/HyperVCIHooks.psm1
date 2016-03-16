@@ -14,6 +14,7 @@ Import-Module ADCharmUtils
 $NEUTRON_GIT           = "https://github.com/openstack/neutron.git"
 $NOVA_GIT              = "https://github.com/openstack/nova.git"
 $NETWORKING_HYPERV_GIT = "https://github.com/openstack/networking-hyperv.git"
+$COMPUTE_HYPERV_GIT    = "https://github.com/openstack/compute-hyperv.git"
 
 $OPENSTACK_DIR  = Join-Path $env:SystemDrive "OpenStack"
 $PYTHON_DIR     = Join-Path $env:SystemDrive "Python27"
@@ -562,6 +563,14 @@ function Install-Nova {
     Copy-Item -Force (Join-Path (Get-TemplatesDir) "interfaces.template") $CONFIG_DIR
 }
 
+function Install-ComputeHyperV {
+    Write-JujuLog "Installing compute-hyperv"
+
+    $openstackBuild = Join-Path $BUILD_DIR "openstack"
+    Start-ExecuteWithRetry {
+        Install-OpenStackProjectFromRepo "$openstackBuild\compute-hyperv"
+    }
+}
 
 function Install-Neutron {
     Write-JujuLog "Installing neutron"
@@ -698,10 +707,11 @@ function Get-CherryPicksObject {
     $ret = @{
         'nova' = @();
         'networking-hyperv' = @();
+        'compute-hyperv' = @();
         'neutron' = @()
     }
     $splitCfgOption = $cfgOption.Split(',')
-    $validProjects = @('nova', 'networking-hyperv', 'neutron')
+    $validProjects = @('nova', 'networking-hyperv', 'neutron', 'compute-hyperv')
     foreach ($item in $splitCfgOption) {
         $splitItem = $item.Split('|')
         if ($splitItem.Count -ne 4) {
@@ -747,7 +757,7 @@ function Initialize-GitRepositories {
         [ValidateSet("hyperv", "ovs")]
         [string]$NetworkType,
         [string]$BranchName,
-        [ValidateSet("openstack/nova", "openstack/neutron", "stackforge/networking-hyperv", "openstack/quantum")]
+        [ValidateSet("openstack/nova", "openstack/neutron", "openstack/networking-hyperv", "openstack/quantum", "openstack/compute-hyperv")]
         [string]$BuildFor
     )
 
@@ -756,7 +766,7 @@ function Initialize-GitRepositories {
     $cherryPicks = Get-CherryPicksObject
     $openstackBuild = Join-Path $BUILD_DIR "openstack"
     if ($NetworkType -eq 'hyperv') {
-        if ($BuildFor -eq "stackforge/networking-hyperv") {
+        if ($BuildFor -eq "openstack/networking-hyperv") {
             Initialize-GitRepository "$openstackBuild\nova" $NOVA_GIT $BranchName $cherryPicks['nova']
             Initialize-GitRepository "$openstackBuild\neutron" $NEUTRON_GIT $BranchName $cherryPicks['neutron']
         } else {
@@ -771,6 +781,7 @@ function Initialize-GitRepositories {
     if (($BuildFor -eq "openstack/neutron") -or ($BuildFor -eq "openstack/quantum")) {
         Initialize-GitRepository "$openstackBuild\nova" $NOVA_GIT $BranchName $cherryPicks['nova']
     }
+    Initialize-GitRepository "$openstackBuild\compute-hyperv" $COMPUTE_HYPERV_GIT $BranchName $cherryPicks['compute-hyperv']
 }
 
 
@@ -800,6 +811,7 @@ function Initialize-Environment {
     Initialize-GitRepositories $networkType $BranchName $BuildFor
 
     Install-Nova
+    Install-ComputeHyperV
     Install-Neutron
     if ($networkType -eq 'hyperv') {
         Install-NetworkingHyperV

@@ -693,9 +693,11 @@ function Enable-OVS {
 
 
 function Ensure-InternalOVSInterfaces {
+    $ifIndex = Get-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex"
+    $ifName = (Get-NetAdapter -ifindex $ifIndex).Name
     Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", "external.1")
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", "internal")
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
+    Enable-NetAdapter -Name "juju-br"
 }
 
 
@@ -1051,7 +1053,7 @@ function Get-DataPort {
     if ($networkType -eq "ovs"){
         Write-JujuInfo "Trying to fetch OVS data port"
         $dataPort = Get-OVSDataPort
-        return @($dataPort[0], $true)
+        return @($dataPort[0], $managementOS)
     }
 
     Write-JujuInfo "Trying to fetch data port from config"

@@ -1362,7 +1362,7 @@ function Start-RelationHooks {
             Write-JujuLog "Polling $serviceName service status for $pollingInterval seconds."
             Watch-ServiceStatus $serviceName -IntervalSeconds $pollingInterval
         }
-
+        pip install -U git+https://git.openstack.org/openstack/os-win.git
         Start-Service "MSiSCSI"
         Set-JujuStatus -Status active -Message "Unit is ready"
     }

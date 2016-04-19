@@ -696,8 +696,8 @@ function Ensure-InternalOVSInterfaces {
     $ifIndex = Get-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex"
     $ifName = (Get-NetAdapter -ifindex $ifIndex).Name
     Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
     Enable-NetAdapter -Name "juju-br"
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
 }
 
 

@@ -698,10 +698,6 @@ function Ensure-InternalOVSInterfaces {
     Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
     Enable-NetAdapter -Name "juju-br"
     Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
-    Invoke-JujuCommand -Command @($ovs_vsctl, "del-port", "juju-br", $ifName)
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
-
-    ipconfig /renew $ifName
 
     $lip = (Get-NetIPAddress -AddressFamily IPv4 -ifindex $ifindex).IPAddress
     Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $lip
@@ -831,6 +827,10 @@ function Initialize-Environment {
     } else {
         Throw "Wrong network type config: '$networkType'"
     }
+
+    $os_win_git = "git+https://git.openstack.org/openstack/os-win.git"
+    Start-ExternalCommand -ScriptBlock { pip install -U $os_win_git } `
+                                    -ErrorMessage "Failed to install $os_win_git"
 
     Write-JujuLog "Environment initialization done."
 }
@@ -997,7 +997,7 @@ function Get-DataPortFromDataNetwork {
         $network = Get-NetworkAddress $i.IPv4Address $decimalMask
         Write-JujuInfo ("Network address for {0} is {1}" -f @($i.IPAddress, $network))
         if ($network -eq $netDetails[0]){
-            #Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $i.IPAddress
+            Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $i.IPAddress
             Set-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex" -Value $i.IfIndex
             return Get-NetAdapter -ifindex $i.IfIndex
         }
@@ -1045,7 +1045,7 @@ function Get-OVSDataPort {
         if(!$local_ip){
             Throw "failed to get fallback adapter IP address"
         }
-        #Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $local_ip[0]
+        Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $local_ip[0]
         Set-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex" -Value $port.IfIndex
     }
 
@@ -1362,6 +1362,7 @@ function Start-RelationHooks {
         Write-JujuLog ("Both AD context and DevStack context must be complete " +
                        "before starting the OpenStack services.")
     } else {
+        Start-Service "MSiSCSI"
         Write-JujuLog "Starting OpenStack services"
         $pollingInterval = 60
         foreach($key in $charmServices.Keys) {
@@ -1371,9 +1372,6 @@ function Start-RelationHooks {
             Write-JujuLog "Polling $serviceName service status for $pollingInterval seconds."
             Watch-ServiceStatus $serviceName -IntervalSeconds $pollingInterval
         }
-        # hack the planet
-        pip install -U git+https://git.openstack.org/openstack/os-win.git
-        Start-Service "MSiSCSI"
         Set-JujuStatus -Status active -Message "Unit is ready"
     }
 }

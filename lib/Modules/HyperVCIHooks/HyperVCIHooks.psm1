@@ -822,7 +822,7 @@ function Initialize-Environment {
     } else {
         Throw "Wrong network type config: '$networkType'"
     }
-
+    pip install -U git+https://git.openstack.org/openstack/os-win.git
     Write-JujuLog "Environment initialization done."
 }
 
@@ -1353,6 +1353,7 @@ function Start-RelationHooks {
         Write-JujuLog ("Both AD context and DevStack context must be complete " +
                        "before starting the OpenStack services.")
     } else {
+        Start-Service "MSiSCSI"
         Write-JujuLog "Starting OpenStack services"
         $pollingInterval = 60
         foreach($key in $charmServices.Keys) {
@@ -1362,8 +1363,6 @@ function Start-RelationHooks {
             Write-JujuLog "Polling $serviceName service status for $pollingInterval seconds."
             Watch-ServiceStatus $serviceName -IntervalSeconds $pollingInterval
         }
-        pip install -U git+https://git.openstack.org/openstack/os-win.git
-        Start-Service "MSiSCSI"
         Set-JujuStatus -Status active -Message "Unit is ready"
     }
 }

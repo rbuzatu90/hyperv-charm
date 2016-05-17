@@ -1237,9 +1237,10 @@ function Start-InstallHook {
     }
 
     Write-JujuLog "Installing pip"
+    $conf_pip_version = Get-JujuCharmConfig -Scope 'pip-version'
     $tmpPath = Join-Path $env:TEMP "get-pip.py"
     Start-DownloadFile -Uri "https://bootstrap.pypa.io/get-pip.py" -SkipIntegrityCheck -OutFile $tmpPath
-    Start-ExternalCommand -ScriptBlock { python $tmpPath } -ErrorMessage "Failed to install pip."
+    Start-ExternalCommand -ScriptBlock { python $tmpPath $conf_pip_version } -ErrorMessage "Failed to install pip."
     Remove-Item $tmpPath
     $version = Start-ExternalCommand { pip.exe --version } -ErrorMessage "Failed to get pip version."
     Write-JujuLog "Pip version: $version"

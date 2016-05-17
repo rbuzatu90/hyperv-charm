@@ -119,4 +119,8 @@ options:
       URL used to download Visual C++ 2012 x86 runtime. Optionally, a checksum
       supported by the 'Get-FileHash' PowerShell cmdlet can be provided to
       check file integrity.
-      Syntax is: "<url>#<hash_algorithm><checksum>".
+      Syntax is: "<url>#<hash_algorithm><checksum>"
+  pip-version:
+    type: string
+    default: ""
+    description: "Which version of pip to install, example: pip==8.1.1"

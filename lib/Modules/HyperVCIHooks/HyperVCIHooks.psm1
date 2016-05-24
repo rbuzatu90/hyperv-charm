@@ -700,10 +700,9 @@ function Ensure-InternalOVSInterfaces {
     $br_mac = "55-55-" + ((Get-NetAdapter -ifindex $ifIndex).MACAddress).split("-", 3)[2] 
 
     Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
-    Get-NetAdapter -name "juju-br" | Set-NetAdapter -MACAddress $br_mac
+    Get-NetAdapter -name "juju-br" | Set-NetAdapter -MACAddress $br_mac -Confirm:$false
     Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
-    Enable-NetAdapter -Name "juju-br"
-
+    Enable-NetAdapter -Name "juju-br" -Confirm:$false
 }
 
 

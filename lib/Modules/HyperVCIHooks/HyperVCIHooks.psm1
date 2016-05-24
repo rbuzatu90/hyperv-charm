@@ -694,13 +694,16 @@ function Enable-OVS {
 
 function Ensure-InternalOVSInterfaces {
     $ifIndex = Get-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex"
+    $lip = Get-CharmState -Namespace "novahyperv" -Key "local_ip"
     $ifName = (Get-NetAdapter -ifindex $ifIndex).Name
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
-    Enable-NetAdapter -Name "juju-br"
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
 
-    $lip = (Get-NetIPAddress -AddressFamily IPv4 -ifindex $ifindex).IPAddress
-    Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $lip
+    $br_mac = "55-55-" + ((Get-NetAdapter -ifindex $ifIndex).MACAddress).split("-", 3)[2] 
+
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
+    Get-NetAdapter -name "juju-br" | Set-NetAdapter -MACAddress $br_mac
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
+    Enable-NetAdapter -Name "juju-br"
+
 }
 
 

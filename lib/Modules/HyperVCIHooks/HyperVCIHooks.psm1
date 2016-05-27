@@ -687,8 +687,8 @@ function Enable-OVS {
     
     Enable-OVSExtension
 
-    Start-ExternalCommand { sc triggerinfo ovs-vswitchd "start/strcustom/6066F867-7CA1-4418-85FD-36E3F9C0600C/VmmsWmiEventProvider" } -ErrorMessage "Failed to modify ovs-vswitchd service."
-    Start-ExternalCommand { sc config ovs-vswitchd start=demand } -ErrorMessage "Failed to modify ovs-vswitchd service."
+    Start-ExternalCommand { cmd.exe /c "sc triggerinfo ovs-vswitchd start/strcustom/6066F867-7CA1-4418-85FD-36E3F9C0600C/VmmsWmiEventProvider" } -ErrorMessage "Failed to modify ovs-vswitchd service."
+    Start-ExternalCommand { cmd.exe /c "sc config ovs-vswitchd start=demand" } -ErrorMessage "Failed to modify ovs-vswitchd service."
 
     Enable-Service "ovsdb-server"
     Enable-Service "ovs-vswitchd"

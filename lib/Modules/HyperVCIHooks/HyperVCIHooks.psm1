@@ -681,23 +681,58 @@ function Enable-Service {
 }
 
 
+function Set-HyperVMACS {
+    $b1 = "0x{0:x}" -f (get-random -minimum 1 -maximum 255)
+    $b2 = "0x{0:x}" -f (get-random -minimum 1 -maximum 255)
+    $reg = "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Virtualization"
+    set-ItemProperty -path $reg -name minimummacaddress -type binary -value ([byte[]](0x00,0x15,0x5d,$b1,$b2,0x00))
+    set-ItemProperty -path $reg -name maximummacaddress -type binary -value ([byte[]](0x00,0x15,0x5d,$b1,$b2,0xff))
+}
+
+
 function Enable-OVS {
+    $ovs_pip = "ovs==2.6.0.dev1"
+    Start-ExternalCommand { pip install -U $ovs_pip } -ErrorMessage "Failed to install $ovs_pip"
+    
+    Start-ExternalCommand { cmd.exe /c "sc triggerinfo ovs-vswitchd start/strcustom/6066F867-7CA1-4418-85FD-36E3F9C0600C/VmmsWmiEventProvider" } -ErrorMessage "Failed to modify ovs-vswitchd service."
+    Start-ExternalCommand { cmd.exe /c "sc config ovs-vswitchd start=demand" } -ErrorMessage "Failed to modify ovs-vswitchd service."
+
     Enable-OVSExtension
 
     Enable-Service "ovsdb-server"
-    Enable-Service "ovs-vswitchd"
+    #Enable-Service "ovs-vswitchd"
 
     Start-Service "ovsdb-server"
-    Start-Service "ovs-vswitchd"
+    #Start-Service "ovs-vswitchd"
 }
 
 
 function Ensure-InternalOVSInterfaces {
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", "external.1")
-    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", "internal")
-}
+    $ifIndex = Get-CharmState -Namespace "novahyperv" -Key "dataNetworkIfindex"
+    $lip = Get-CharmState -Namespace "novahyperv" -Key "local_ip"
+    $ifName = (Get-NetAdapter -ifindex $ifIndex).Name
 
+    $br_mac = "55-55-" + ((Get-NetAdapter -ifindex $ifIndex).MACAddress).split("-", 3)[2] 
+
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
+    Get-NetAdapter -name "juju-br" | Set-NetAdapter -MACAddress $br_mac -Confirm:$false
+    Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
+
+    Restart-Service "ovs-vswitchd"
+    Enable-NetAdapter -Name "juju-br" -Confirm:$false
+
+    $count = 0
+    while ($count -lt 60) {
+        if ((get-netipaddress | ? interfacealias -eq "juju-br" | ? addressfamily -eq "ipv4").SuffixOrigin -eq "Dhcp") {
+            $lip = (get-netipaddress | ? interfacealias -eq "juju-br" | ? addressfamily -eq "ipv4").IPAddress
+            Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $lip
+            return
+        }
+        $count += 1
+        Start-Sleep -Seconds 1
+    }
+}
+ 
 
 function Get-CherryPicksObject {
     $cfgOption = Get-JujuCharmConfig -Scope 'cherry-picks'
@@ -822,7 +857,14 @@ function Initialize-Environment {
     } else {
         Throw "Wrong network type config: '$networkType'"
     }
-    pip install -U git+https://git.openstack.org/openstack/os-win.git
+
+    $os_win_git = "git+https://git.openstack.org/openstack/os-win.git"
+    Start-ExternalCommand -ScriptBlock { pip install -U $os_win_git } `
+                                    -ErrorMessage "Failed to install $os_win_git"
+
+    Start-ExternalCommand -ScriptBlock { pip install -U "amqp==1.4.9" } `
+                                    -ErrorMessage "Failed to install $os_win_git"
+
     Write-JujuLog "Environment initialization done."
 }
 
@@ -1051,7 +1093,7 @@ function Get-DataPort {
     if ($networkType -eq "ovs"){
         Write-JujuInfo "Trying to fetch OVS data port"
         $dataPort = Get-OVSDataPort
-        return @($dataPort[0], $true)
+        return @($dataPort[0], $managementOS)
     }
 
     Write-JujuInfo "Trying to fetch data port from config"
@@ -1072,6 +1114,8 @@ function Start-ConfigureVMSwitch {
     if($vmswitch){
         return $true
     }
+
+    Set-HyperVMACS
 
     $dataPort, $managementOS = Get-DataPort
     $VMswitches = Get-VMSwitch -SwitchType External -ErrorAction SilentlyContinue

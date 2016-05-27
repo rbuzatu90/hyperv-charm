@@ -685,10 +685,10 @@ function Enable-OVS {
     $ovs_pip = "ovs==2.6.0.dev1"
     Start-ExternalCommand { pip install -U $ovs_pip } -ErrorMessage "Failed to install $ovs_pip"
     
-    Enable-OVSExtension
-
     Start-ExternalCommand { cmd.exe /c "sc triggerinfo ovs-vswitchd start/strcustom/6066F867-7CA1-4418-85FD-36E3F9C0600C/VmmsWmiEventProvider" } -ErrorMessage "Failed to modify ovs-vswitchd service."
     Start-ExternalCommand { cmd.exe /c "sc config ovs-vswitchd start=demand" } -ErrorMessage "Failed to modify ovs-vswitchd service."
+
+    Enable-OVSExtension
 
     Enable-Service "ovsdb-server"
     Enable-Service "ovs-vswitchd"
@@ -708,9 +708,22 @@ function Ensure-InternalOVSInterfaces {
     Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-br", "juju-br")
     Get-NetAdapter -name "juju-br" | Set-NetAdapter -MACAddress $br_mac -Confirm:$false
     Invoke-JujuCommand -Command @($ovs_vsctl, "--may-exist", "add-port", "juju-br", $ifName)
-    Enable-NetAdapter -Name "juju-br" -Confirm:$false
-}
 
+    Restart-Service "ovs-vswitchd"
+    Enable-NetAdapter -Name "juju-br" -Confirm:$false
+
+    $count = 0
+    while ($count -lt 60) {
+        if ((get-netipaddress | ? interfacealias -eq "juju-br" | ? addressfamily -eq "ipv4").SuffixOrigin -eq "Dhcp") {
+            $lip = (get-netipaddress | ? interfacealias -eq "juju-br" | ? addressfamily -eq "ipv4").IPAddress
+            Set-CharmState -Namespace "novahyperv" -Key "local_ip" -Value $lip
+            return
+        }
+        $count += 1
+        Start-Sleep -Seconds 1
+    }
+}
+ 
 
 function Get-CherryPicksObject {
     $cfgOption = Get-JujuCharmConfig -Scope 'cherry-picks'
@@ -840,7 +853,8 @@ function Initialize-Environment {
     Start-ExternalCommand -ScriptBlock { pip install -U $os_win_git } `
                                     -ErrorMessage "Failed to install $os_win_git"
 
-    Write-JujuLog "Environment initialization done."
+    Start-ExternalCommand -ScriptBlock { pip install -U "amqp==1.4.9" } `
+                                    -ErrorMessage "Failed to install $os_win_git"
 }
 
 

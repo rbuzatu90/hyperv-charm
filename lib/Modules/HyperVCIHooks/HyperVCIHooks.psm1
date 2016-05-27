@@ -682,6 +682,9 @@ function Enable-Service {
 
 
 function Enable-OVS {
+    $ovs_pip = "ovs==2.6.0.dev1"
+    Start-ExternalCommand { pip install -U $ovs_pip } -ErrorMessage "Failed to install $ovs_pip"
+    
     Enable-OVSExtension
 
     Start-ExternalCommand { sc triggerinfo ovs-vswitchd start/strcustom/6066F867-7CA1-4418-85FD-36E3F9C0600C/VmmsWmiEventProvider } -ErrorMessage "Failed to modify ovs-vswitchd service."

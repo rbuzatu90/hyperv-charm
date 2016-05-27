@@ -681,6 +681,15 @@ function Enable-Service {
 }
 
 
+function Set-HyperVMACS {
+    $b1 = "0x{0:x}" -f (get-random -minimum 1 -maximum 255)
+    $b2 = "0x{0:x}" -f (get-random -minimum 1 -maximum 255)
+    $reg = "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Virtualization"
+    set-ItemProperty -path $reg -name minimummacaddress -type binary -value ([byte[]](0x00,0x15,0x5d,$b1,$b2,0x00))
+    set-ItemProperty -path $reg -name maximummacaddress -type binary -value ([byte[]](0x00,0x15,0x5d,$b1,$b2,0xff))
+}
+
+
 function Enable-OVS {
     $ovs_pip = "ovs==2.6.0.dev1"
     Start-ExternalCommand { pip install -U $ovs_pip } -ErrorMessage "Failed to install $ovs_pip"
@@ -691,10 +700,10 @@ function Enable-OVS {
     Enable-OVSExtension
 
     Enable-Service "ovsdb-server"
-    Enable-Service "ovs-vswitchd"
+    #Enable-Service "ovs-vswitchd"
 
     Start-Service "ovsdb-server"
-    Start-Service "ovs-vswitchd"
+    #Start-Service "ovs-vswitchd"
 }
 
 
@@ -1103,6 +1112,8 @@ function Start-ConfigureVMSwitch {
     if($vmswitch){
         return $true
     }
+
+    Set-HyperVMACS
 
     $dataPort, $managementOS = Get-DataPort
     $VMswitches = Get-VMSwitch -SwitchType External -ErrorAction SilentlyContinue

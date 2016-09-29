@@ -1314,14 +1314,14 @@ function Start-InstallHook {
         python "$PYTHON_DIR\Scripts\pywin32_postinstall.py" -install
     } -ErrorMessage "Failed to run pywin32_postinstall.py"
 
-    Write-JujuLog "Running Git Prep"
-    $zuulUrl = Get-JujuCharmConfig -Scope 'zuul-url'
-    $zuulRef = Get-JujuCharmConfig -Scope 'zuul-ref'
-    $zuulChange = Get-JujuCharmConfig -Scope 'zuul-change'
-    $zuulProject = Get-JujuCharmConfig -Scope 'zuul-project'
-    $gerritSite = $zuulUrl.Trim('/p')
-    Start-GerritGitPrep -ZuulUrl $zuulUrl -GerritSite $gerritSite -ZuulRef $zuulRef `
-                        -ZuulChange $zuulChange -ZuulProject $zuulProject
+    #Write-JujuLog "Running Git Prep"
+    #$zuulUrl = Get-JujuCharmConfig -Scope 'zuul-url'
+    #$zuulRef = Get-JujuCharmConfig -Scope 'zuul-ref'
+    #$zuulChange = Get-JujuCharmConfig -Scope 'zuul-change'
+    #$zuulProject = Get-JujuCharmConfig -Scope 'zuul-project'
+    #$gerritSite = $zuulUrl.Trim('/p')
+    #Start-GerritGitPrep -ZuulUrl $zuulUrl -GerritSite $gerritSite -ZuulRef $zuulRef `
+    #                    -ZuulChange $zuulChange -ZuulProject $zuulProject
 
     $gitEmail = Get-JujuCharmConfig -scope 'git-user-email'
     $gitName = Get-JujuCharmConfig -scope 'git-user-name'
@@ -1331,8 +1331,8 @@ function Start-InstallHook {
         -ErrorMessage "Failed to set git global user.name"
     $zuulBranch = Get-JujuCharmConfig -scope 'zuul-branch'
 
-    Write-JujuLog "Initializing the environment"
-    Initialize-Environment -BranchName $zuulBranch -BuildFor $zuulProject
+    #Write-JujuLog "Initializing the environment"
+    #Initialize-Environment -BranchName $zuulBranch -BuildFor $zuulProject
 }
 
 

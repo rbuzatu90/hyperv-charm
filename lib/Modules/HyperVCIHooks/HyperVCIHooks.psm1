@@ -1393,21 +1393,21 @@ function Start-RelationHooks {
         }
     }
 
-    $devstackCtx = Get-DevStackContext
-    if (!$devstackCtx.Count -or !$adCtx.Count) {
-        Write-JujuLog ("Both AD context and DevStack context must be complete " +
-                       "before starting the OpenStack services.")
-    } else {
-        Start-Service "MSiSCSI"
-        Write-JujuLog "Starting OpenStack services"
-        $pollingInterval = 60
-        foreach($key in $charmServices.Keys) {
-            $serviceName = $charmServices[$key]['service_name']
-            Write-JujuLog "Starting $serviceName service"
-            Start-Service -ServiceName $serviceName
-            Write-JujuLog "Polling $serviceName service status for $pollingInterval seconds."
-            Watch-ServiceStatus $serviceName -IntervalSeconds $pollingInterval
-        }
+    #$devstackCtx = Get-DevStackContext
+    #if (!$devstackCtx.Count -or !$adCtx.Count) {
+    #    Write-JujuLog ("Both AD context and DevStack context must be complete " +
+    #                   "before starting the OpenStack services.")
+    #} else {
+    #    Start-Service "MSiSCSI"
+    #    Write-JujuLog "Starting OpenStack services"
+    #    $pollingInterval = 60
+    #    foreach($key in $charmServices.Keys) {
+    #        $serviceName = $charmServices[$key]['service_name']
+    #        Write-JujuLog "Starting $serviceName service"
+    #        Start-Service -ServiceName $serviceName
+    #        Write-JujuLog "Polling $serviceName service status for $pollingInterval seconds."
+    #        Watch-ServiceStatus $serviceName -IntervalSeconds $pollingInterval
+    #    }
         Set-JujuStatus -Status active -Message "Unit is ready"
-    }
+    #}
 }

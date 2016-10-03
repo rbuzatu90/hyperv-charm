@@ -7,5 +7,3 @@ tags:
 requires:
   ad-join:
     interface: ad-join
-  devstack:
-    interface: devstack

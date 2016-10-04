@@ -1,4 +1,5 @@
-#
+a
+n
 # Copyright 2015-2016 Cloudbase Solutions Srl
 #
 
@@ -1262,11 +1263,6 @@ function Start-InstallHook {
     # Disable firewall
     Start-ExternalCommand { netsh.exe advfirewall set allprofiles state off } -ErrorMessage "Failed to disable firewall."
 
-    # Enable Live Migration
-    Start-ExternalCommand { Enable-VMMigration } -ErrorMessage "Failed to enable live migation."
-    Start-ExternalCommand { Set-VMHost -useanynetworkformigration $true } -ErrorMessage "Failed setting using any network for migration"
-    Start-ExternalCommand { Set-VMHost -VirtualMachineMigrationAuthenticationType Kerberos } -ErrorMessage "Failed setting VM migartion authentication type"
-
     # Disable automatic updates
     Start-ExternalCommand { Stop-Service wuauserv } -ErrorMessage "Failed disabling automatic updates"
 
@@ -1385,6 +1381,11 @@ function Start-RelationHooks {
         Write-JujuLog "AD context is not ready."
     } else {
         Start-JoinDomain
+
+    # Enable Live Migration
+    Start-ExternalCommand { Enable-VMMigration } -ErrorMessage "Failed to enable live migation."
+    Start-ExternalCommand { Set-VMHost -useanynetworkformigration $true } -ErrorMessage "Failed setting using any network for migration"
+    Start-ExternalCommand { Set-VMHost -VirtualMachineMigrationAuthenticationType Kerberos } -ErrorMessage "Failed setting VM migartion authentication type"
 
         $adUserCred = @{
             'domain'   = $adCtx["domainName"];

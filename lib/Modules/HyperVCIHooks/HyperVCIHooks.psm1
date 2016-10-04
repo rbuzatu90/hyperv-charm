@@ -1262,6 +1262,14 @@ function Start-InstallHook {
     # Disable firewall
     Start-ExternalCommand { netsh.exe advfirewall set allprofiles state off } -ErrorMessage "Failed to disable firewall."
 
+    # Enable Live Migration
+    Start-ExternalCommand { Enable-VMMigration } -ErrorMessage "Failed to enable live migation."
+    Start-ExternalCommand { Set-VMHost -useanynetworkformigration $true } -ErrorMessage "Failed setting using any network for migration"
+    Start-ExternalCommand { Set-VMHost -VirtualMachineMigrationAuthenticationType Kerberos } -ErrorMessage "Failed setting VM migartion authentication type"
+
+    # Disable automatic updates
+    Start-ExternalCommand { Stop-Service wuauserv } -ErrorMessage "Failed disabling automatic updates"
+
     Import-CloudbaseCert
     Start-ConfigureVMSwitch
     Write-PipConfigFile
@@ -1273,6 +1281,11 @@ function Start-InstallHook {
     # Install Python 2.7.x (x86)
     Install-Dependency 'python27-url' @('/qn')
     Add-ToUserPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
+
+    # Install Windows OpenSSL 
+    Install-Dependency 'openssl-url' @('/verysilent')
+
+    # http://slproweb.com/download/Win32OpenSSL-1_0_2j.exe
 
     # Install FreeRDP Hyper-V console access
     $enableFreeRDP = Get-JujuCharmConfig -Scope 'enable-freerdp-console'

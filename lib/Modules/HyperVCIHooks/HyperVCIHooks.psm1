@@ -1,5 +1,3 @@
-a
-n
 # Copyright 2015-2016 Cloudbase Solutions Srl
 #
 

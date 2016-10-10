@@ -1391,6 +1391,7 @@ function Start-RelationHooks {
                                  $adCtx['adcredentials'][0]['password']
             Write-ConfigFile $key
         }
+        Set-JujuStatus -Status active -Message "Unit is ready"
     }
 
     #$devstackCtx = Get-DevStackContext
@@ -1408,6 +1409,5 @@ function Start-RelationHooks {
     #        Write-JujuLog "Polling $serviceName service status for $pollingInterval seconds."
     #        Watch-ServiceStatus $serviceName -IntervalSeconds $pollingInterval
     #    }
-        Set-JujuStatus -Status active -Message "Unit is ready"
     #}
 }

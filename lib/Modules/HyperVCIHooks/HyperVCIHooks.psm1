@@ -842,28 +842,28 @@ function Initialize-Environment {
         Expand-ZipArchive $zipPath $BIN_DIR
     }
 
-    $networkType = Get-JujuCharmConfig -Scope 'network-type'
-    Initialize-GitRepositories $networkType $BranchName $BuildFor
+    #$networkType = Get-JujuCharmConfig -Scope 'network-type'
+    #Initialize-GitRepositories $networkType $BranchName $BuildFor
 
-    Install-Nova
-    Install-ComputeHyperV
-    Install-Neutron
-    if ($networkType -eq 'hyperv') {
-        Install-NetworkingHyperV
-    } elseif ($networkType -eq 'ovs') {
-        Check-OVSPrerequisites
-        Enable-OVS
-        Ensure-InternalOVSInterfaces
-    } else {
-        Throw "Wrong network type config: '$networkType'"
-    }
+    #Install-Nova
+    #Install-ComputeHyperV
+    #Install-Neutron
+    #if ($networkType -eq 'hyperv') {
+    #    Install-NetworkingHyperV
+    #} elseif ($networkType -eq 'ovs') {
+    #    Check-OVSPrerequisites
+    #    Enable-OVS
+    #    Ensure-InternalOVSInterfaces
+    #} else {
+    #    Throw "Wrong network type config: '$networkType'"
+    #}
 
-    $os_win_git = "git+https://git.openstack.org/openstack/os-win.git"
-    Start-ExternalCommand -ScriptBlock { pip install -U $os_win_git } `
-                                    -ErrorMessage "Failed to install $os_win_git"
+    #$os_win_git = "git+https://git.openstack.org/openstack/os-win.git"
+    #Start-ExternalCommand -ScriptBlock { pip install -U $os_win_git } `
+    #                                -ErrorMessage "Failed to install $os_win_git"
 
-    Start-ExternalCommand -ScriptBlock { pip install -U "amqp==1.4.9" } `
-                                    -ErrorMessage "Failed to install $os_win_git"
+    #Start-ExternalCommand -ScriptBlock { pip install -U "amqp==1.4.9" } `
+    #                                -ErrorMessage "Failed to install $os_win_git"
 
     Write-JujuLog "Environment initialization done."
 }
@@ -1331,8 +1331,8 @@ function Start-InstallHook {
         -ErrorMessage "Failed to set git global user.name"
     $zuulBranch = Get-JujuCharmConfig -scope 'zuul-branch'
 
-    #Write-JujuLog "Initializing the environment"
-    #Initialize-Environment -BranchName $zuulBranch -BuildFor $zuulProject
+    Write-JujuLog "Initializing the environment"
+    Initialize-Environment
 }
 
 
@@ -1378,8 +1378,8 @@ function Start-RelationHooks {
             'username' = $adCtx['adcredentials'][0]['username'];
             'password' = $adCtx['adcredentials'][0]['password']
         }
-        $relationParams = @{'ad_credentials' = (Get-MarshaledObject $adUserCred);}
-        Set-DevStackRelationParams $relationParams
+        #$relationParams = @{'ad_credentials' = (Get-MarshaledObject $adUserCred);}
+        #Set-DevStackRelationParams $relationParams
 
         # Add AD user to local Administrators group
         Grant-PrivilegesOnDomainUser $adCtx['adcredentials'][0]['username']

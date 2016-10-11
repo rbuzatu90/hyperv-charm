@@ -1274,6 +1274,9 @@ function Start-InstallHook {
     Install-Dependency 'python27-url' @('/qn')
     Add-ToUserPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
 
+    # Install Windows OpenSSL
+    Install-Dependency 'openssl-url' @('/verysilent')
+
     # Install FreeRDP Hyper-V console access
     $enableFreeRDP = Get-JujuCharmConfig -Scope 'enable-freerdp-console'
     if ($enableFreeRDP -eq $true) {
@@ -1372,6 +1375,11 @@ function Start-RelationHooks {
         Write-JujuLog "AD context is not ready."
     } else {
         Start-JoinDomain
+
+    # Enable Live Migration
+    Start-ExternalCommand { Enable-VMMigration } -ErrorMessage "Failed to enable live migation."
+    Start-ExternalCommand { Set-VMHost -useanynetworkformigration $true } -ErrorMessage "Failed setting using any network for migration"
+    Start-ExternalCommand { Set-VMHost -VirtualMachineMigrationAuthenticationType Kerberos } -ErrorMessage "Failed setting VM migartion authentication type"
 
         $adUserCred = @{
             'domain'   = $adCtx["domainName"];

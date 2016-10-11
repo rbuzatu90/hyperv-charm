@@ -1131,6 +1131,15 @@ function Start-ConfigureVMSwitch {
 
     Write-JujuInfo "Adding new vmswitch: $VMswitchName"
     New-VMSwitch -Name $VMswitchName -NetAdapterName $dataPort.Name -AllowManagementOS $managementOS
+
+    $vmswitch_index=(Get-NetAdapter -Name "vEthernet (br100)").ifIndex
+    $primary_interface=(Get-NetIPConfiguration | Foreach IPv4DefaultGateway).ifIndex
+    $2nd_octet=(Get-NetAdapter | ? status -eq 'up' | Get-NetIPAddress  -ea 0 | ? IPAddress -Like "10.*" | ? IPAddress -NotLike "10.0*").IPAddress.split(".")[1]
+    $4th_octet=(Get-NetAdapter | ? status -eq 'up' | Get-NetIPAddress  -ea 0 | ? IPAddress -Like "10.*" | ? IPAddress -NotLike "10.0*").IPAddress.split(".")[3]
+    $new_ip="10.0.$2nd_octet.$4th_octet"
+    Write-JujuInfo "Setting IP addres of $new_ip to br100"
+    New-NetIPAddress -ifIndex $vmswitch_index -IPAddress $new_ip -PrefixLength 16 -ErrorAction SilentlyContinue
+
     return $true
 }
 
@@ -1376,10 +1385,10 @@ function Start-RelationHooks {
     } else {
         Start-JoinDomain
 
-    # Enable Live Migration
+    Write-JujuLog "Enabling Live Migration"
     Start-ExternalCommand { Enable-VMMigration } -ErrorMessage "Failed to enable live migation."
     Start-ExternalCommand { Set-VMHost -useanynetworkformigration $true } -ErrorMessage "Failed setting using any network for migration"
-    Start-ExternalCommand { Set-VMHost -VirtualMachineMigrationAuthenticationType Kerberos } -ErrorMessage "Failed setting VM migartion authentication type"
+    Start-ExternalCommand { Set-VMHost -VirtualMachineMigrationAuthenticationType Kerberos -ErrorAction SilentlyContinue } -ErrorMessage "Failed setting VM migartion authentication type"
 
         $adUserCred = @{
             'domain'   = $adCtx["domainName"];

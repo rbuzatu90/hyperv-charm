@@ -1271,8 +1271,10 @@ function Start-InstallHook {
     # Disable firewall
     Start-ExternalCommand { netsh.exe advfirewall set allprofiles state off } -ErrorMessage "Failed to disable firewall."
 
-    # Disable automatic updates
-    Start-ExternalCommand { Stop-Service wuauserv } -ErrorMessage "Failed disabling automatic updates"
+    Write-JujuLog "Disabling automatic updates"
+    $service = Get-WmiObject Win32_Service -Filter 'Name="wuauserv"'
+    $service.ChangeStartMode("Disabled")
+    $service.StopService()
 
     Import-CloudbaseCert
     Start-ConfigureVMSwitch

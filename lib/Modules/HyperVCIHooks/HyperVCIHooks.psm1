@@ -1132,10 +1132,10 @@ function Start-ConfigureVMSwitch {
     Write-JujuInfo "Adding new vmswitch: $VMswitchName"
     New-VMSwitch -Name $VMswitchName -NetAdapterName $dataPort.Name -AllowManagementOS $managementOS
 
-    $vmswitch_index=(Get-NetAdapter -Name "vEthernet (br100)").ifIndex
+    $vmswitch_index=(Get-NetAdapter | ? Name -Like "*$VMswitchName*").ifIndex
     $primary_interface=(Get-NetIPConfiguration | Foreach IPv4DefaultGateway).ifIndex
-    $2nd_octet=(Get-NetAdapter | ? status -eq 'up' | Get-NetIPAddress  -ea 0 | ? IPAddress -Like "10.*" | ? IPAddress -NotLike "10.0*").IPAddress.split(".")[1]
-    $4th_octet=(Get-NetAdapter | ? status -eq 'up' | Get-NetIPAddress  -ea 0 | ? IPAddress -Like "10.*" | ? IPAddress -NotLike "10.0*").IPAddress.split(".")[3]
+    $2nd_octet=(Get-NetIPAddress -ifIndex $primary_interface | ? AddressFamily -eq IPv4).IPAddress.split(".")[1]
+    $4th_octet=(Get-NetIPAddress -ifIndex $primary_interface | ? AddressFamily -eq IPv4).IPAddress.split(".")[3]
     $new_ip="10.0.$2nd_octet.$4th_octet"
     Write-JujuInfo "Setting IP addres of $new_ip to br100"
     New-NetIPAddress -ifIndex $vmswitch_index -IPAddress $new_ip -PrefixLength 16 -ErrorAction SilentlyContinue

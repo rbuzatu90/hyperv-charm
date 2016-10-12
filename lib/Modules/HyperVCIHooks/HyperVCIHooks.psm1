@@ -1271,6 +1271,9 @@ function Start-InstallHook {
     # Disable firewall
     Start-ExternalCommand { netsh.exe advfirewall set allprofiles state off } -ErrorMessage "Failed to disable firewall."
 
+    # Disable automatic updates
+    Start-ExternalCommand { Stop-Service wuauserv } -ErrorMessage "Failed disabling automatic updates"
+
     Import-CloudbaseCert
     Start-ConfigureVMSwitch
     Write-PipConfigFile

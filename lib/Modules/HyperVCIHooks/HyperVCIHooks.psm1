@@ -1283,10 +1283,12 @@ function Start-InstallHook {
     # Install Git
     Install-Dependency 'git-url' @('/SILENT')
     Add-ToUserPath "${env:ProgramFiles(x86)}\Git\cmd"
+    Add-ToSystemPath "${env:ProgramFiles(x86)}\Git\cmd"
 
     # Install Python 2.7.x (x86)
     Install-Dependency 'python27-url' @('/qn')
     Add-ToUserPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
+    Add-ToSystemPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
 
     # Install Windows OpenSSL
     Install-Dependency 'openssl-url' @('/verysilent')

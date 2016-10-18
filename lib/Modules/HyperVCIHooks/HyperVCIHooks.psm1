@@ -1136,7 +1136,7 @@ function Start-ConfigureVMSwitch {
     $primary_interface=(Get-NetIPConfiguration | Foreach IPv4DefaultGateway).ifIndex
     $2nd_octet=(Get-NetIPAddress -ifIndex $primary_interface | ? AddressFamily -eq IPv4).IPAddress.split(".")[1]
     $4th_octet=(Get-NetIPAddress -ifIndex $primary_interface | ? AddressFamily -eq IPv4).IPAddress.split(".")[3]
-    $new_ip="10.0.$2nd_octet.$4th_octet"
+    $new_ip="10.250.$2nd_octet.$4th_octet"
     Write-JujuInfo "Setting IP addres of $new_ip to br100"
     New-NetIPAddress -ifIndex $vmswitch_index -IPAddress $new_ip -PrefixLength 16 -ErrorAction SilentlyContinue
 

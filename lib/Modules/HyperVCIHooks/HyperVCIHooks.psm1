@@ -1131,6 +1131,15 @@ function Start-ConfigureVMSwitch {
 
     Write-JujuInfo "Adding new vmswitch: $VMswitchName"
     New-VMSwitch -Name $VMswitchName -NetAdapterName $dataPort.Name -AllowManagementOS $managementOS
+
+    $vmswitch_index=(Get-NetAdapter | ? Name -Like "*$VMswitchName*").ifIndex
+    $primary_interface=(Get-NetIPConfiguration | Foreach IPv4DefaultGateway).ifIndex
+    $2nd_octet=(Get-NetIPAddress -ifIndex $primary_interface | ? AddressFamily -eq IPv4).IPAddress.split(".")[1]
+    $4th_octet=(Get-NetIPAddress -ifIndex $primary_interface | ? AddressFamily -eq IPv4).IPAddress.split(".")[3]
+    $new_ip="10.250.$2nd_octet.$4th_octet"
+    Write-JujuInfo "Setting IP addres of $new_ip to br100"
+    New-NetIPAddress -ifIndex $vmswitch_index -IPAddress $new_ip -PrefixLength 16 -ErrorAction SilentlyContinue
+
     return $true
 }
 
@@ -1262,6 +1271,16 @@ function Start-InstallHook {
     # Disable firewall
     Start-ExternalCommand { netsh.exe advfirewall set allprofiles state off } -ErrorMessage "Failed to disable firewall."
 
+    Write-JujuLog "Disabling automatic updates"
+    $updates_service = Get-WmiObject Win32_Service -Filter 'Name="wuauserv"'
+    $updates_service.ChangeStartMode("Disabled")
+    $updates_service.StopService()
+
+    Write-JujuLog "Enable and start MSiSCSI"
+    $msiscsi_service = Get-WmiObject Win32_Service -Filter 'Name="MSiSCSI"'
+    $msiscsi_service.ChangeStartMode("Automatic")
+    $msiscsi_service.StartService()
+
     Import-CloudbaseCert
     Start-ConfigureVMSwitch
     Write-PipConfigFile
@@ -1269,10 +1288,15 @@ function Start-InstallHook {
     # Install Git
     Install-Dependency 'git-url' @('/SILENT')
     Add-ToUserPath "${env:ProgramFiles(x86)}\Git\cmd"
+    Add-ToSystemPath "${env:ProgramFiles(x86)}\Git\cmd"
 
     # Install Python 2.7.x (x86)
     Install-Dependency 'python27-url' @('/qn')
     Add-ToUserPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
+    Add-ToSystemPath "${env:SystemDrive}\Python27;${env:SystemDrive}\Python27\scripts"
+
+    # Install Windows OpenSSL
+    Install-Dependency 'openssl-url' @('/verysilent')
 
     # Install FreeRDP Hyper-V console access
     $enableFreeRDP = Get-JujuCharmConfig -Scope 'enable-freerdp-console'
@@ -1372,6 +1396,11 @@ function Start-RelationHooks {
         Write-JujuLog "AD context is not ready."
     } else {
         Start-JoinDomain
+
+    Write-JujuLog "Enabling Live Migration"
+    Start-ExternalCommand { Enable-VMMigration } -ErrorMessage "Failed to enable live migation."
+    Start-ExternalCommand { Set-VMHost -useanynetworkformigration $true } -ErrorMessage "Failed setting using any network for migration"
+    Start-ExternalCommand { Set-VMHost -VirtualMachineMigrationAuthenticationType Kerberos -ErrorAction SilentlyContinue } -ErrorMessage "Failed setting VM migartion authentication type"
 
         $adUserCred = @{
             'domain'   = $adCtx["domainName"];

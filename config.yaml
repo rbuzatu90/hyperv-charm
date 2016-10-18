@@ -106,6 +106,14 @@ options:
       supported by the 'Get-FileHash' PowerShell cmdlet can be provided to
       check file integrity.
       Syntax is: "<url>#<hash_algorithm><checksum>"
+  openssl-url:
+    type: string
+    default: "http://slproweb.com/download/Win32OpenSSL-1_0_2j.exe"
+    description: |
+      URL used to download OpenSSL for Windows. Optionally, a checksum
+      supported by the 'Get-FileHash' PowerShell cmdlet can be provided to
+      check file integrity.
+      Syntax is: "<url>#<hash_algorithm><checksum>"
   enable-freerdp-console:
     type: boolean
     default: True

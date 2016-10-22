@@ -1289,6 +1289,7 @@ function Start-InstallHook {
     Install-Dependency 'git-url' @('/SILENT')
     Add-ToUserPath "${env:ProgramFiles(x86)}\Git\cmd"
     Add-ToSystemPath "${env:ProgramFiles(x86)}\Git\cmd"
+    Add-ToSystemPath "${env:ProgramFiles(x86)}\Git\bin"
 
     # Install Python 2.7.x (x86)
     Install-Dependency 'python27-url' @('/qn')

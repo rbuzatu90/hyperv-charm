@@ -1365,8 +1365,10 @@ function Start-ADRelationJoinedHook {
     $hypervADUser = Get-HypervADUser
     $userGroup = @{$hypervADUser = @("CN=Users")}
     $encUserGroup = Get-MarshaledObject $userGroup
+    $constraintsList = @("Microsoft Virtual System Migration Service", "cifs")
     $relationParams = @{
-        'computername' = [System.Net.Dns]::GetHostName();
+        'computername' = [System.Net.Dns]::GetHostName()
+        'constraints' = Get-MarshaledObject $constraintsList
         'adusers' = $encUserGroup
     }
 
